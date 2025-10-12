@@ -1,0 +1,14 @@
+[project]
+name = "bilibili-mall"
+version = "0.1.0"
+description = "A system for searching for discounted products in the bilibili magic mall."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiofiles>=25.1.0",
+    "curl-cffi>=0.13.0",
+    "numpy>=2.3.3",
+    "orjson>=3.11.3",
+    "pandas>=2.3.3",
+    "rich>=14.2.0",
+]
