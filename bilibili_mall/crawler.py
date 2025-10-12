@@ -63,8 +63,6 @@ class BMallSpider:
     async def fetch_all(self):
         # next_id
         next_id: str | None = None
-        # next_id 列表
-        all_ids: list[str] = []
         # 总元数据列表
         all_data: list[dict] = []
 
@@ -74,16 +72,15 @@ class BMallSpider:
         HIT_COUNTS = 0
 
         # 存储路径
-        save_ids_path = "./Data/bmall_ids.txt"
-        save_data_path = "./Data/bmall_data.json"
-        await aioos.makedirs(os.path.dirname(save_ids_path), exist_ok=True)
+        save_id_path = "./Data/bmall_next_id.txt"
+        save_data_path = "./Data/bmall_all_data.json"
+        await aioos.makedirs(os.path.dirname(save_id_path), exist_ok=True)
         await aioos.makedirs(os.path.dirname(save_data_path), exist_ok=True)
 
         #!断点续传
-        if await aioos.path.exists(save_ids_path):
-            async with aiofiles.open(save_ids_path, "r") as f:
-                all_ids = (await f.read()).splitlines(keepends=False)
-                next_id = all_ids[-1] if len(all_ids) > 0 else None
+        if await aioos.path.exists(save_id_path):
+            async with aiofiles.open(save_id_path, "r", encoding="utf-8") as f:
+                next_id = await f.read()
         if await aioos.path.exists(save_data_path):
             async with aiofiles.open(save_data_path, "rb") as f:
                 all_data = orjson.loads(await f.read())
@@ -131,14 +128,13 @@ class BMallSpider:
                 data: list[dict] = json_["data"]["data"]
                 next_id = json_["data"]["nextId"]
 
-                # 市集返回的数据是一个环形列表，因此不加以阻断会无限爬取重复的数据，故需要在发现重复的 nextId 时停止爬取
-                if next_id in all_ids:
-                    logger.info(f"All data fetched, total {len(all_data)} items")
-                    break
-
-                all_ids.append(next_id)
                 all_data.extend(data)
                 logger.info(f"Fetched {len(data)} items, total {len(all_data)} items")
+
+                # 市集返回的数据是一个环形列表，因此不加以阻断会无限爬取重复的数据，故需要在发现重复的 nextId 时停止爬取（初始 next_id 永远为 None）
+                if next_id is None:
+                    logger.info(f"All data fetched, total {len(all_data)} items")
+                    break
 
             # 由 raise_for_status() 函数引发的 HTTPError 异常
             except HTTPError as exc:
@@ -162,8 +158,8 @@ class BMallSpider:
                 break
 
             finally:
-                async with aiofiles.open(save_ids_path, "a", encoding="utf-8") as f:
-                    await f.write(f"{next_id}\n")
+                async with aiofiles.open(save_id_path, "w", encoding="utf-8") as f:
+                    await f.write(f"{next_id}")
                 async with aiofiles.open(save_data_path, "wb") as f:
                     await f.write(orjson.dumps(all_data))
 
