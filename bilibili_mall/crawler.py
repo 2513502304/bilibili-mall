@@ -61,26 +61,8 @@ class BMallSpider:
         )
 
     async def fetch_all(self):
-        url = "https://mall.bilibili.com/mall-magic-c/internet/c2c/v2/list"
-        referer = (
-            "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
-        )
-        cookies = "buvid3=9F2B971D-2AE1-A9BC-2013-3BF2AC57917246810infoc; b_nut=1758249346; _uuid=ADD3577A-EF9A-4E63-D3AC-C874101EE1D6652335infoc; enable_web_push=DISABLE; buvid4=3F37126F-334C-54A6-B7D5-8B7A47190EF949075-025091910-09RanKmP+ITnof2LFEgnQQ%3D%3D; buvid_fp=d4a91ea73a0a5800424df9af2daafae6; DedeUserID=86137069; DedeUserID__ckMd5=9c9e29b3c177de79; theme-tip-show=SHOWED; theme-avatar-tip-show=SHOWED; rpdid=0zbfAI6DyH|riBXoJ6p|3LX|3w1UZr4p; hit-dyn-v2=1; CURRENT_QUALITY=80; theme-switch-show=SHOWED; CURRENT_FNVAL=2000; SESSDATA=8eb33039%2C1775225814%2C87543%2Aa2CjASAPqlpie2_QoqttOfU25zGI0xgBoHMZyJtV_hhtDf6q9WTS9iJecPS0Sv5M0i7NgSVmNtSGxIY2I3Z1A3ZGxrMkN1TzlEdHl3dTVnbHo1ZmY2VlJ3dG13dzRYWGVYQU5DV09TLVFtWW5XdG9kMnZPZG5RbEhwUHkyUUxpRFFlNnJiTFVHVDlBIIEC; bili_jct=d95db9f890cfc6e8022e9edb8f123189; bp_t_offset_86137069=1120280698050052096; home_feed_column=5; browser_resolution=1500-877; Hm_lvt_8d8d2f308d6e6dffaf586bd024670861=1759135426,1759858888"
-        cookies = {
-            cookie.split("=")[0]: cookie.split("=")[1] for cookie in cookies.split("; ")
-        }
-        json_data = {
-            "nextId": None,
-            "sortType": SortType.PIECE_DESC.value,
-            "priceFilters": PieceFilters.BELOW_TWENTY.value
-            + PieceFilters.TWENTY2THIRTY.value
-            + PieceFilters.THIRTY2FIFTY.value
-            + PieceFilters.FIFTY2HUNDRED.value
-            + PieceFilters.HUNDRED2TWO_HUNDRED.value
-            + PieceFilters.OVER_TWO_HUNDRED.value,
-            "discountFilters": None,
-        }
-
+        # next_id
+        next_id: str | None = None
         # next_id 列表
         all_ids: list[str] = []
         # 总元数据列表
@@ -92,8 +74,39 @@ class BMallSpider:
         HIT_COUNTS = 0
 
         # 存储路径
-        save_path = "./Data/bmail.json"
-        await aioos.makedirs(os.path.dirname(save_path), exist_ok=True)
+        save_ids_path = "./Data/bmall_ids.txt"
+        save_data_path = "./Data/bmall_data.json"
+        await aioos.makedirs(os.path.dirname(save_ids_path), exist_ok=True)
+        await aioos.makedirs(os.path.dirname(save_data_path), exist_ok=True)
+
+        #!断点续传
+        if await aioos.path.exists(save_ids_path):
+            async with aiofiles.open(save_ids_path, "r") as f:
+                all_ids = (await f.read()).splitlines(keepends=False)
+                next_id = all_ids[-1] if len(all_ids) > 0 else None
+        if await aioos.path.exists(save_data_path):
+            async with aiofiles.open(save_data_path, "rb") as f:
+                all_data = orjson.loads(await f.read())
+
+        url = "https://mall.bilibili.com/mall-magic-c/internet/c2c/v2/list"
+        referer = (
+            "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
+        )
+        cookies = "buvid3=9F2B971D-2AE1-A9BC-2013-3BF2AC57917246810infoc; b_nut=1758249346; _uuid=ADD3577A-EF9A-4E63-D3AC-C874101EE1D6652335infoc; enable_web_push=DISABLE; buvid4=3F37126F-334C-54A6-B7D5-8B7A47190EF949075-025091910-09RanKmP+ITnof2LFEgnQQ%3D%3D; buvid_fp=d4a91ea73a0a5800424df9af2daafae6; DedeUserID=86137069; DedeUserID__ckMd5=9c9e29b3c177de79; theme-tip-show=SHOWED; theme-avatar-tip-show=SHOWED; rpdid=0zbfAI6DyH|riBXoJ6p|3LX|3w1UZr4p; hit-dyn-v2=1; CURRENT_QUALITY=80; theme-switch-show=SHOWED; CURRENT_FNVAL=2000; SESSDATA=8eb33039%2C1775225814%2C87543%2Aa2CjASAPqlpie2_QoqttOfU25zGI0xgBoHMZyJtV_hhtDf6q9WTS9iJecPS0Sv5M0i7NgSVmNtSGxIY2I3Z1A3ZGxrMkN1TzlEdHl3dTVnbHo1ZmY2VlJ3dG13dzRYWGVYQU5DV09TLVFtWW5XdG9kMnZPZG5RbEhwUHkyUUxpRFFlNnJiTFVHVDlBIIEC; bili_jct=d95db9f890cfc6e8022e9edb8f123189; bp_t_offset_86137069=1120280698050052096; home_feed_column=5; browser_resolution=1500-877; Hm_lvt_8d8d2f308d6e6dffaf586bd024670861=1759135426,1759858888"
+        cookies = {
+            cookie.split("=")[0]: cookie.split("=")[1] for cookie in cookies.split("; ")
+        }
+        json_data = {
+            "nextId": next_id,
+            "sortType": SortType.PIECE_DESC.value,
+            "priceFilters": PieceFilters.BELOW_TWENTY.value
+            + PieceFilters.TWENTY2THIRTY.value
+            + PieceFilters.THIRTY2FIFTY.value
+            + PieceFilters.FIFTY2HUNDRED.value
+            + PieceFilters.HUNDRED2TWO_HUNDRED.value
+            + PieceFilters.OVER_TWO_HUNDRED.value,
+            "discountFilters": None,
+        }
 
         while True:
             try:
@@ -116,7 +129,7 @@ class BMallSpider:
 
                 json_: dict = response.json()
                 data: list[dict] = json_["data"]["data"]
-                next_id: str = json_["data"]["nextId"]
+                next_id = json_["data"]["nextId"]
 
                 # 市集返回的数据是一个环形列表，因此不加以阻断会无限爬取重复的数据，故需要在发现重复的 nextId 时停止爬取
                 if next_id in all_ids:
@@ -149,7 +162,9 @@ class BMallSpider:
                 break
 
             finally:
-                async with aiofiles.open(save_path, "wb") as f:
+                async with aiofiles.open(save_ids_path, "a", encoding="utf-8") as f:
+                    await f.write(f"{next_id}\n")
+                async with aiofiles.open(save_data_path, "wb") as f:
                     await f.write(orjson.dumps(all_data))
 
             json_data["nextId"] = next_id
