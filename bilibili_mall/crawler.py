@@ -90,9 +90,8 @@ class BMallSpider:
             "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
         )
         cookies = "buvid3=9F2B971D-2AE1-A9BC-2013-3BF2AC57917246810infoc; b_nut=1758249346; _uuid=ADD3577A-EF9A-4E63-D3AC-C874101EE1D6652335infoc; enable_web_push=DISABLE; buvid4=3F37126F-334C-54A6-B7D5-8B7A47190EF949075-025091910-09RanKmP+ITnof2LFEgnQQ%3D%3D; DedeUserID=86137069; DedeUserID__ckMd5=9c9e29b3c177de79; theme-tip-show=SHOWED; theme-avatar-tip-show=SHOWED; rpdid=0zbfAI6DyH|riBXoJ6p|3LX|3w1UZr4p; hit-dyn-v2=1; CURRENT_QUALITY=80; theme-switch-show=SHOWED; home_feed_column=5; browser_resolution=1500-877; Hm_lvt_8d8d2f308d6e6dffaf586bd024670861=1759135426,1759858888; fingerprint=695f6cd339f3bd379db9a1ff759cdc8b; buvid_fp_plain=undefined; buvid_fp=695f6cd339f3bd379db9a1ff759cdc8b; SESSDATA=4f65fa90%2C1775979551%2Cff548%2Aa2CjCHpbd4jaKBlnVVnhGrISTndP_aE5c4ji0Jde_bUfbVcT8S55A0hXNMsFww_fgpzvASVmN6Zmp5Tnlnd2JHLXY0eGNJZjFTbjNrZG9oY1A0UnB6S2ZzZnJLcDdnVExtSEdOMDdET19mSXlPRmRLSGtJUjE0eFkyMm4xOGtYSHhSUHl6NFNnQ2dBIIEC; bili_jct=143365b08750514b6ca1da42ea3ed93a; CURRENT_FNVAL=4048; bp_t_offset_86137069=1123516900073013248"
-        cookies = {
-            cookie.split("=")[0]: cookie.split("=")[1] for cookie in cookies.split("; ")
-        }
+        cookies = dict(item.split("=", 1) for item in cookies.split("; "))
+        
         json_data = {
             "nextId": next_id,
             "sortType": SortType.PIECE_DESC.value,
