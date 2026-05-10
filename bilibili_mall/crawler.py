@@ -65,8 +65,8 @@ class BMallSpider:
     async def fetch_all(self):
         # next_id
         next_id: str | None = None
-        # 总元数据列表
-        all_data: list[dict] = []
+        # 总元数据计数
+        total_items = 0
 
         # 最大重试次数
         MAX_RETRIES = 10
@@ -75,17 +75,20 @@ class BMallSpider:
 
         # 存储路径
         save_id_path = "./Data/bmall_next_id.txt"
-        save_data_path = "./Data/bmall_all_data.json"
+        save_data_path = "./Data/bmall_all_data.jsonl"
         await aioos.makedirs(os.path.dirname(save_id_path), exist_ok=True)
         await aioos.makedirs(os.path.dirname(save_data_path), exist_ok=True)
 
         #!断点续传
         if await aioos.path.exists(save_id_path):
             async with aiofiles.open(save_id_path, "r", encoding="utf-8") as f:
-                next_id = await f.read()
+                next_id = (await f.read()).strip() or None
+                if next_id == "None":
+                    next_id = None
         if await aioos.path.exists(save_data_path):
             async with aiofiles.open(save_data_path, "rb") as f:
-                all_data = orjson.loads(await f.read())
+                async for _ in f:
+                    total_items += 1
 
         url = "https://mall.bilibili.com/mall-magic-c/internet/c2c/v2/list"
         referer = (
@@ -131,13 +134,21 @@ class BMallSpider:
                 data: list[dict] = json_["data"]["data"]
                 next_id = json_["data"]["nextId"]
 
-                all_data.extend(data)
-                logger.info(f"Fetched {len(data)} items, total {len(all_data)} items")
+                async with aiofiles.open(save_data_path, "ab") as f:
+                    await f.write(b"".join(orjson.dumps(item) + b"\n" for item in data))
+
+                total_items += len(data)
+                logger.info(f"Fetched {len(data)} items, total {total_items} items")
+
+                async with aiofiles.open(save_id_path, "w", encoding="utf-8") as f:
+                    await f.write(f"{next_id}")
 
                 # 市集返回的数据是一个环形列表，因此不加以阻断会无限爬取重复的数据，故需要在发现重复的 nextId 时停止爬取（初始 next_id 永远为 None）
                 if next_id is None:
-                    logger.info(f"All data fetched, total {len(all_data)} items")
+                    logger.info(f"All data fetched, total {total_items} items")
                     break
+
+                json_data["nextId"] = next_id
 
             except Exception as exc:
                 logger.error(f"{exc.__class__.__name__} - {exc}")
@@ -153,11 +164,3 @@ class BMallSpider:
                     break
                 else:
                     continue
-
-            finally:
-                async with aiofiles.open(save_id_path, "w", encoding="utf-8") as f:
-                    await f.write(f"{next_id}")
-                async with aiofiles.open(save_data_path, "wb") as f:
-                    await f.write(orjson.dumps(all_data))
-
-            json_data["nextId"] = next_id

@@ -2,16 +2,11 @@ import asyncio
 import re
 from playwright.async_api import Playwright, async_playwright, expect
 import pandas as pd
-import orjson
 from spdl.pipeline import PipelineBuilder
 
-save_path = "./Data/bmall_all_data.json"
+save_path = "./Data/bmall_all_data.jsonl"
 
-with open(save_path, "rb") as f:
-    content = f.read()
-    all_data = orjson.loads(content)
-
-df = pd.DataFrame(all_data)
+df = pd.read_json(save_path, lines=True)
 
 # f"https://mall.bilibili.com/neul-next/index.html?page=magic-market_detail&noTitleBar=1&itemsId={c2cItemsId}&from=market_index"
 df["c2cItemsLink"] = df["c2cItemsId"].apply(
