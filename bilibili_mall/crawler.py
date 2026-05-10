@@ -54,6 +54,8 @@ class BMallSpider:
             max_clients=12,
             base_url=None,
             timeout=30,
+            proxy="127.0.0.1:7897",
+            trust_env=True,
             allow_redirects=True,
             impersonate="chrome",
             default_headers=True,
@@ -89,18 +91,20 @@ class BMallSpider:
         referer = (
             "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
         )
-        cookies = "buvid3=A02095B2-E489-EA41-4FFF-4F300663C4FC97665infoc; b_nut=1761316697; bsource=search_bing; _uuid=551589C6-5C82-7B4A-51DF-A9853107A5D6D97903infoc; enable_web_push=DISABLE; buvid_fp=735996326964332c57898e8e8b7fde24; bmg_af_switch=1; buvid4=5EE57039-5F71-2586-C339-EFC5EF60AC7298833-025102422-HTLmy/kc4BSO/1W6v6lqL6B72BIH/M4C2Ab+Ns9yU+B6qCXxA70oh2g43V8bsXCw; SESSDATA=e22a7f0a%2C1776869490%2Cf43d7%2Aa2CjD2jl7RWHd467XdnyUb-DNIoO0bF4smWk_hZ8Pq9zJtT_HT_-gI8-u8FVCKCXbxZUASVmpqR2lJUERQbEdtV3poYmlKTnNSU0pSeHJSUnVpME9WQ3piZFdlWlY3b0ZaTW16WUM3WTNlR3gxdjBZRkpFeWpuUnhRZVlIZWdkd1F5QlRObm9yQjhBIIEC; bili_jct=dc73eea1fd19213ac72713c35761f141; DedeUserID=86137069; DedeUserID__ckMd5=9c9e29b3c177de79; theme-tip-show=SHOWED; theme-avatar-tip-show=SHOWED; sid=8ajahu1x; rpdid=|(klRmkYlYYY0J'u~YuJk|lkl; CURRENT_QUALITY=80; LIVE_BUVID=AUTO8117613947869128; timeMachine=0; bmg_src_def_domain=i2.hdslb.com; bp_t_offset_86137069=1129476566638657536; bili_ticket=eyJhbGciOiJIUzI1NiIsImtpZCI6InMwMyIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NjIxNTM3NDAsImlhdCI6MTc2MTg5NDQ4MCwicGx0IjotMX0.pIziIZMVhgkDAReDe5RLVr9ABTcBlQnEW_OQV_6dAv4; bili_ticket_expires=1762153680; CURRENT_FNVAL=4048; PVID=8; home_feed_column=4; b_lsid=A96ADDC8_19A39861489; browser_resolution=830-401"
+        cookies = "CURRENT_QUALITY=125;b_lsid=4A9838B5_19C4BC6E3CA;Hm_lpvt_8d8d2f308d6e6dffaf586bd024670861=1769855660;theme-tip-show=SHOWED;home_feed_column=5;LIVE_BUVID=AUTO8517688974973005;buvid4=1BB1BC11-DC29-B5AF-573D-8D287EF74FAG52669-026013017-fGzWhFBjsdBah6PdANDPTPPnNX1sL1rFLtcDlOXOmQyOvJKqzZxLwTA01CPOPqfs;CURRENT_FNVAL=2000;buvid3=88D99652-B810-21E5-1BE9-9586BC2F74B272541infoc;kfcFrom=market_detail;sid=5jl3ee0l;SESSDATA=7f5e4839%2C1779942453%2C66d7a%2Ab1CjCorxDTQPXv62bRZKE4QAxGx1K7wUON60N-YBg2j3bZCJTgP86U68yMBJVpJduyOCcSVjYwX0hDSEpPZU1jMHE1RWFSYVl1RWhucEQtTFpTZ25BSXNrZmhyb1VGcXE3NU5TVm50RWZ6RnUyUUJPa0NYS0MtTlY5WnFhWmRqOGhWa2ttN2xlSXFBIIEC;bsource=search_bing;bp_t_offset_86137069=1168049182596923430;deviceFingerprint=88473ae963b10f2382d65e7c7924bfd1;b_nut=1764390371;_uuid=B93AAC10D-10310C-45D3-77103-FF9F1102E1E8D72933infoc;bili_jct=a976cb1a7f5ccd5cf584eb64f7a05eb8;bili_ticket=eyJhbGciOiJIUzI1NiIsImtpZCI6InMwMyIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzA5MTQ2OTcsImlhdCI6MTc3MDY1NTQzNywicGx0IjotMX0.zwAPb6kL9r6X-FJa4-hVvx1lMw3JdQz0Xwqx8htcOqw;bili_ticket_expires=1770914637;browser_resolution=1504-863;buvid_fp=55db4bfa14c4dcfe75360378c70c7566;DedeUserID=86137069;DedeUserID__ckMd5=9c9e29b3c177de79;Hm_lvt_8d8d2f308d6e6dffaf586bd024670861=1769855436;HMACCOUNT=74F41F67F4E068AC;rpdid=|(um~lRmmkl~0J'u~YRJm|J~R"
         cookies = dict(item.split("=", 1) for item in cookies.split("; "))
 
         json_data = {
             "nextId": next_id,
             "sortType": SortType.PIECE_DESC.value,
-            "priceFilters": PieceFilters.BELOW_TWENTY.value
-            + PieceFilters.TWENTY2THIRTY.value
-            + PieceFilters.THIRTY2FIFTY.value
-            + PieceFilters.FIFTY2HUNDRED.value
-            + PieceFilters.HUNDRED2TWO_HUNDRED.value
-            + PieceFilters.OVER_TWO_HUNDRED.value,
+            "priceFilters": (
+                PieceFilters.BELOW_TWENTY.value
+                + PieceFilters.TWENTY2THIRTY.value
+                + PieceFilters.THIRTY2FIFTY.value
+                + PieceFilters.FIFTY2HUNDRED.value
+                + PieceFilters.HUNDRED2TWO_HUNDRED.value
+                + PieceFilters.OVER_TWO_HUNDRED.value,
+            ),
             "discountFilters": None,
         }
 
@@ -108,7 +112,7 @@ class BMallSpider:
             try:
                 #!经过测试，每次的间隔必须大于 1.2s（每分钟不超过大约 50 次请求），否则引起服务器 412 错误：{"code":-412,"message":"request was banned","ttl":1}
                 await asyncio.sleep(
-                    np.random.uniform(1.2, 1.225),
+                    np.random.uniform(1.2, 1.5),
                 )
 
                 response: Response = await self.session.post(
