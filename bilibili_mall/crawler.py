@@ -94,7 +94,7 @@ class BMallSpider:
         referer = (
             "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
         )
-        cookies = "CURRENT_QUALITY=125;b_lsid=4A9838B5_19C4BC6E3CA;Hm_lpvt_8d8d2f308d6e6dffaf586bd024670861=1769855660;theme-tip-show=SHOWED;home_feed_column=5;LIVE_BUVID=AUTO8517688974973005;buvid4=1BB1BC11-DC29-B5AF-573D-8D287EF74FAG52669-026013017-fGzWhFBjsdBah6PdANDPTPPnNX1sL1rFLtcDlOXOmQyOvJKqzZxLwTA01CPOPqfs;CURRENT_FNVAL=2000;buvid3=88D99652-B810-21E5-1BE9-9586BC2F74B272541infoc;kfcFrom=market_detail;sid=5jl3ee0l;SESSDATA=7f5e4839%2C1779942453%2C66d7a%2Ab1CjCorxDTQPXv62bRZKE4QAxGx1K7wUON60N-YBg2j3bZCJTgP86U68yMBJVpJduyOCcSVjYwX0hDSEpPZU1jMHE1RWFSYVl1RWhucEQtTFpTZ25BSXNrZmhyb1VGcXE3NU5TVm50RWZ6RnUyUUJPa0NYS0MtTlY5WnFhWmRqOGhWa2ttN2xlSXFBIIEC;bsource=search_bing;bp_t_offset_86137069=1168049182596923430;deviceFingerprint=88473ae963b10f2382d65e7c7924bfd1;b_nut=1764390371;_uuid=B93AAC10D-10310C-45D3-77103-FF9F1102E1E8D72933infoc;bili_jct=a976cb1a7f5ccd5cf584eb64f7a05eb8;bili_ticket=eyJhbGciOiJIUzI1NiIsImtpZCI6InMwMyIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3NzA5MTQ2OTcsImlhdCI6MTc3MDY1NTQzNywicGx0IjotMX0.zwAPb6kL9r6X-FJa4-hVvx1lMw3JdQz0Xwqx8htcOqw;bili_ticket_expires=1770914637;browser_resolution=1504-863;buvid_fp=55db4bfa14c4dcfe75360378c70c7566;DedeUserID=86137069;DedeUserID__ckMd5=9c9e29b3c177de79;Hm_lvt_8d8d2f308d6e6dffaf586bd024670861=1769855436;HMACCOUNT=74F41F67F4E068AC;rpdid=|(um~lRmmkl~0J'u~YRJm|J~R"
+        cookies = "buvid3=88D99652-B810-21E5-1BE9-9586BC2F74B272541infoc; b_nut=1764390371; _uuid=B93AAC10D-10310C-45D3-77103-FF9F1102E1E8D72933infoc; buvid_fp=55db4bfa14c4dcfe75360378c70c7566; rpdid=|(um~lRmmkl~0J'u~YRJm|J~R; SESSDATA=7f5e4839%2C1779942453%2C66d7a%2Ab1CjCorxDTQPXv62bRZKE4QAxGx1K7wUON60N-YBg2j3bZCJTgP86U68yMBJVpJduyOCcSVjYwX0hDSEpPZU1jMHE1RWFSYVl1RWhucEQtTFpTZ25BSXNrZmhyb1VGcXE3NU5TVm50RWZ6RnUyUUJPa0NYS0MtTlY5WnFhWmRqOGhWa2ttN2xlSXFBIIEC; bili_jct=a976cb1a7f5ccd5cf584eb64f7a05eb8; DedeUserID=86137069; DedeUserID__ckMd5=9c9e29b3c177de79; sid=5jl3ee0l; theme-tip-show=SHOWED; LIVE_BUVID=AUTO8517688974973005; Hm_lvt_8d8d2f308d6e6dffaf586bd024670861=1772205538,1774199136; buvid4=A55F8A7D-608B-CAD1-BDAE-CC39A6EBC40G78922-026050119-RjFYgDsx4sGH6nuVnLhNGw%3D%3D; bili_ticket=eyJhbGciOiJIUzI1NiIsImtpZCI6InMwMyIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Nzg1ODgwNjcsImlhdCI6MTc3ODMyODgwNywicGx0IjotMX0.9ybaABpk3rwbGLbSIQ_dA-IoqOhI5TzkiB8QtkMzDbU; bili_ticket_expires=1778588007; home_feed_column=5; CURRENT_FNVAL=4048; ogv_device_support_hdr=1; ogv_device_support_dolby=0; CURRENT_QUALITY=125; bp_t_offset_86137069=1200470950120783875; browser_resolution=1504-406; deviceFingerprint=4dfb2b0af9ce198aff98b8a172ddb3c6; from=pc_mall; b_lsid=50A3F910_19E118D6D02"
         cookies = dict(item.split("=", 1) for item in cookies.split("; "))
 
         json_data = {
@@ -106,7 +106,7 @@ class BMallSpider:
                 + PieceFilters.THIRTY2FIFTY.value
                 + PieceFilters.FIFTY2HUNDRED.value
                 + PieceFilters.HUNDRED2TWO_HUNDRED.value
-                + PieceFilters.OVER_TWO_HUNDRED.value,
+                + PieceFilters.OVER_TWO_HUNDRED.value
             ),
             "discountFilters": None,
         }
