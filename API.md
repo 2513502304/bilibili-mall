@@ -32,7 +32,7 @@
                     "50-70", # 5 - 7 折
                     "70-100" # 7 折以上
                 ],
-                nextId": null    # 分页标识，第一次请求时传 null，后续请求时传上一次响应中的 nextId
+                "nextId": null    # 分页标识，第一次请求时传 null，后续请求时传上一次响应中的 nextId
             }
             ```
         - 返回响应内容：
@@ -43,30 +43,30 @@
                     "data": [
                         {
                             "c2cItemsId": 177914243276,   # 商品 id
-                            "type": 1,
+                            "type": 1, # 商品类型，样本中 1 为普通商品，2 为福袋
                             "c2cItemsName": "TAITO 伊蕾娜 水着ver. 景品手办",   # 商品名称
                             "detailDtoList": [  # 商品中包含物品的详情列表
                                 {
-                                    "blindBoxId": 211257889,
-                                    "itemsId": 11167710,    # 物品 id
-                                    "skuId": 1004348723,    # sku id
-                                    "name": "TAITO 伊蕾娜 水着ver. 景品手办",   # 物品名称
-                                    "img": "//i0.hdslb.com/bfs/mall/mall/25/f0/25f098380d5a7dc7056b7ae8c1ee7fee.png",   # 物品图片链接
+                                    "blindBoxId": 211257889, # 盲盒 / 盒柜物品 id
+                                    "itemsId": 11167710,    # 物品 id，福袋或隐藏商品的占位条目可能为 0
+                                    "skuId": 1004348723,    # sku id，福袋或隐藏商品的占位条目可能为 0
+                                    "name": "TAITO 伊蕾娜 水着ver. 景品手办",   # 物品名称，隐藏商品可能为空字符串
+                                    "img": "//i0.hdslb.com/bfs/mall/mall/25/f0/25f098380d5a7dc7056b7ae8c1ee7fee.png",   # 物品图片链接，可能是 https 链接或 // 开头的协议相对链接
                                     "marketPrice": 11200,   # 物品原价（市场价）* 100
                                     "type": 0,
-                                    "isHidden": false
+                                    "isHidden": false   # 是否为隐藏商品信息，福袋中可能为 true
                                 }
                             ],
-                            "totalItemsCount": 1,   # 物品个数，与 detailDtoList 的长度相同
-                            "price": 10000, # 商品售价（出售价）* 100
-                            "showPrice": "100", # 商品售价（出售价）
-                            "showMarketPrice": "112",   # 商品原价（市场价）
-                            "uid": "10***9",    # 用户 uid
-                            "paymentTime": 0,
+                            "totalItemsCount": 1,   # 商品包含的物品总数
+                            "price": 10000, # 整个市集商品的售价（出售价）* 100
+                            "showPrice": "100", # 整个市集商品的售价（出售价）
+                            "showMarketPrice": "112",   # 整个市集商品的原价（市场价），多物品时为聚合展示值
+                            "uid": "10***9",    # 脱敏后的卖家用户 uid
+                            "paymentTime": 0,   # 样本中未成交商品为 0
                             "isMyPublish": false,   # 是否为我发布的商品
                             "uname": "欧***",   # 卖家用户名称
                             "uface": "https://i1.hdslb.com/bfs/face/4601dbb75aa4ec80773435b45026fccbd6a9b5c4.jpg",  # 卖家用户头像链接
-                            "uspaceJumpUrl": null
+                            "uspaceJumpUrl": null    # 卖家空间跳转链接，当前样本中为 null
                         },
                         ...
                     ],
