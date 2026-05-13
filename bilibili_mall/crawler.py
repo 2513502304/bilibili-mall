@@ -113,9 +113,9 @@ class BMallSpider:
 
         while True:
             try:
-                #!经过测试，每次的间隔必须大于 1.2s（每分钟不超过大约 50 次请求），否则引起服务器 412 错误：{"code":-412,"message":"request was banned","ttl":1}
+                #!经过测试，每次的间隔必须大于 1.25s（每分钟不超过大约 50 次请求），否则引起服务器 412 错误：{"code":-412,"message":"request was banned","ttl":1}
                 await asyncio.sleep(
-                    np.random.uniform(1.2, 1.5),
+                    np.random.uniform(1.25, 1.3),
                 )
 
                 response: Response = await self.session.post(
@@ -153,7 +153,7 @@ class BMallSpider:
             except Exception as exc:
                 logger.error(f"{exc.__class__.__name__} - {exc}")
                 await asyncio.sleep(
-                    np.random.uniform(0.25, 0.5),
+                    np.random.uniform(0.2, 0.3),
                 )
 
                 # HTTP 请求错误，累计错误命中计数
