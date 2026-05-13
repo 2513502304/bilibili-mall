@@ -527,8 +527,8 @@ if data.empty:
     st.warning("数据文件为空。", icon=":material/warning:")
     st.stop()
 
-price_min = int(data["priceYuan"].min())
-price_max = int(data["priceYuan"].max())
+price_min = math.floor(data["priceYuan"].min())
+price_max = math.ceil(data["priceYuan"].max())
 
 with st.sidebar:
     st.header("筛选", divider=False)
