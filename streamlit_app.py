@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import orjson
 import pandas as pd
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
@@ -252,6 +253,25 @@ def _file_signature(path: Path) -> tuple[int, int]:
     return stat.st_mtime_ns, stat.st_size
 
 
+def _read_jsonl_snapshot(path: str) -> pd.DataFrame:
+    raw = Path(path).read_bytes()
+    lines = raw.splitlines()
+    if not lines:
+        return pd.DataFrame()
+
+    rows: list[Any] = []
+    for index, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
+            rows.append(orjson.loads(line))
+        except orjson.JSONDecodeError:
+            if index == len(lines) - 1 and not raw.endswith((b"\n", b"\r")):
+                break
+            raise
+    return pd.DataFrame.from_records(rows)
+
+
 def _first_detail_value(details: Any, key: str) -> Any:
     if isinstance(details, list) and details and isinstance(details[0], dict):
         return details[0].get(key)
@@ -329,7 +349,7 @@ def load_items(
     schema_version: int,
 ) -> pd.DataFrame:
     _ = (mtime_ns, size, schema_version)
-    return _prepare_items(pd.read_json(path, lines=True))
+    return _prepare_items(_read_jsonl_snapshot(path))
 
 
 @st.cache_data(show_spinner=False, max_entries=3, ttl="10m")
@@ -488,12 +508,19 @@ class CrawlerRuntime:
         return snapshot
 
 
+_CRAWLER_RUNTIME: CrawlerRuntime | None = None
+_CRAWLER_RUNTIME_LOCK = threading.Lock()
+
+
 def get_crawler_runtime() -> CrawlerRuntime:
-    runtime = st.session_state.get("crawler_runtime")
-    if not has_runtime_api(runtime):
-        runtime = CrawlerRuntime(control=CrawlerControl())
+    global _CRAWLER_RUNTIME
+    with _CRAWLER_RUNTIME_LOCK:
+        runtime = _CRAWLER_RUNTIME
+        if not has_runtime_api(runtime):
+            runtime = CrawlerRuntime(control=CrawlerControl())
+            _CRAWLER_RUNTIME = runtime
         st.session_state["crawler_runtime"] = runtime
-    return runtime
+        return runtime
 
 
 def has_runtime_api(runtime: Any) -> bool:
@@ -512,9 +539,12 @@ def has_runtime_api(runtime: Any) -> bool:
 
 
 def reset_crawler_runtime() -> CrawlerRuntime:
-    runtime = CrawlerRuntime(control=CrawlerControl())
-    st.session_state["crawler_runtime"] = runtime
-    return runtime
+    global _CRAWLER_RUNTIME
+    with _CRAWLER_RUNTIME_LOCK:
+        runtime = CrawlerRuntime(control=CrawlerControl())
+        _CRAWLER_RUNTIME = runtime
+        st.session_state["crawler_runtime"] = runtime
+        return runtime
 
 
 class StreamlitRuntimeLogHandler(logging.Handler):
@@ -564,7 +594,22 @@ def run_crawler_worker(
 
 
 def start_crawler(config: CrawlerConfig, *, reset: bool = False, restart: bool = False) -> None:
-    runtime = reset_crawler_runtime()
+    global _CRAWLER_RUNTIME
+    with _CRAWLER_RUNTIME_LOCK:
+        current_runtime = _CRAWLER_RUNTIME
+        if (
+            has_runtime_api(current_runtime)
+            and current_runtime.thread
+            and current_runtime.thread.is_alive()
+        ):
+            current_runtime.append_log("WARNING 已有爬虫后台线程运行，忽略重复启动")
+            current_runtime.update(status="running", message="已有爬虫正在运行")
+            st.session_state["crawler_runtime"] = current_runtime
+            return
+
+        runtime = CrawlerRuntime(control=CrawlerControl())
+        _CRAWLER_RUNTIME = runtime
+        st.session_state["crawler_runtime"] = runtime
     runtime.update(status="starting", message="正在启动爬虫")
     runtime.append_log("INFO 正在创建爬虫后台线程")
     thread = threading.Thread(
