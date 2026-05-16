@@ -18,6 +18,10 @@ from curl_cffi import AsyncSession, Response
 from .crawler_options import ENV_PROXY_KEYS, DiscountFilters, PieceFilters, SortType
 from .utils import logger
 
+BMALL_LIST_URL = "https://mall.bilibili.com/mall-magic-c/internet/c2c/v2/list"
+BMALL_REFERER = "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
+PAUSE_POLL_SECONDS = 0.25
+
 
 def crawl_data_path(data_dir: Path | str) -> Path:
     return Path(data_dir) / "bmall_all_data.jsonl"
@@ -185,6 +189,25 @@ class CrawlerRunSummary:
     message: str = ""
 
 
+@dataclass
+class CrawlRunContext:
+    requests: list[CrawlRequest]
+    fingerprint: str
+    request_index: int
+    next_id: str | None
+    total_items: int
+    seen_item_ids: set[str]
+    written_items: int = 0
+    skipped_duplicates: int = 0
+    started_at: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
+class CrawlPage:
+    items: list[dict[str, Any]]
+    next_id: str | None
+
+
 class CrawlerControl:
     def __init__(self) -> None:
         self.pause_event = threading.Event()
@@ -234,6 +257,81 @@ class BMallSpider:
         control: CrawlerControl | None = None,
         progress_callback: ProgressCallback | None = None,
     ) -> CrawlerRunSummary:
+        context = await self._prepare_run(reset=reset, restart=restart)
+
+        for index in range(context.request_index, len(context.requests)):
+            request = context.requests[index]
+            if index != context.request_index:
+                context.next_id = None
+            hit_counts = 0
+
+            while True:
+                if await self._should_stop(control, progress_callback, index, context.next_id):
+                    return self._summary(
+                        status="stopped",
+                        context=context,
+                        request_index=index,
+                        message="用户停止了爬虫",
+                    )
+
+                try:
+                    page = await self._fetch_page(request, context.next_id)
+                    hit_counts = 0
+                    written_count = await self._store_page_items(page, context)
+                    logger.info(
+                        "Fetched %s items, wrote %s new items, total %s items",
+                        len(page.items),
+                        written_count,
+                        context.total_items,
+                    )
+
+                    await self._save_running_state(context, index)
+                    self._emit_running_progress(
+                        progress_callback,
+                        context=context,
+                        request=request,
+                        request_index=index,
+                        fetched_items=len(page.items),
+                    )
+
+                    if context.next_id is None:
+                        break
+
+                except Exception as exc:
+                    logger.error(f"{exc.__class__.__name__} - {exc}")
+                    await asyncio.sleep(np.random.uniform(*self.config.error_extra_sleep_range))
+                    hit_counts += 1
+                    self._emit_error_progress(
+                        progress_callback,
+                        context=context,
+                        request=request,
+                        request_index=index,
+                        error=f"{exc.__class__.__name__}: {exc}",
+                        hit_counts=hit_counts,
+                    )
+                    if hit_counts >= self.config.max_retries:
+                        logger.critical("Too many http errors, stop fetching")
+                        return self._summary(
+                            status="failed",
+                            context=context,
+                            request_index=index,
+                            message=f"连续错误达到 {self.config.max_retries} 次，已停止",
+                        )
+
+            await self._save_completed_request_state(context, index)
+
+        logger.info(f"All data fetched, total {context.total_items} items")
+        return self._summary(
+            status="completed",
+            context=context,
+            request_index=len(context.requests),
+            message="抓取完成",
+        )
+
+    async def close(self) -> None:
+        await self.session.close()
+
+    async def _prepare_run(self, *, reset: bool, restart: bool) -> CrawlRunContext:
         config = self.config
         await aioos.makedirs(str(config.data_dir), exist_ok=True)
         if reset:
@@ -241,152 +339,145 @@ class BMallSpider:
         elif restart:
             await clear_crawl_outputs(config.data_dir, include_data=False)
 
-        requests = config.build_requests()
-        state = await self._load_state()
         fingerprint = config.fingerprint()
+        state = await self._load_state()
         if state.get("fingerprint") != fingerprint:
             state = {}
 
-        request_index = int(state.get("request_index") or 0)
-        next_id = state.get("next_id")
-        total_items = await self._count_existing_items()
-        seen_item_ids = await self._load_seen_item_ids() if config.dedupe_output else set()
-        written_items = 0
-        skipped_duplicates = 0
-        started_at = time.time()
+        return CrawlRunContext(
+            requests=config.build_requests(),
+            fingerprint=fingerprint,
+            request_index=int(state.get("request_index") or 0),
+            next_id=state.get("next_id"),
+            total_items=await self._count_existing_items(),
+            seen_item_ids=(
+                await self._load_seen_item_ids() if config.dedupe_output else set()
+            ),
+        )
 
-        url = "https://mall.bilibili.com/mall-magic-c/internet/c2c/v2/list"
-        referer = "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
-        cookies = config.cookies
+    async def _fetch_page(self, request: CrawlRequest, next_id: str | None) -> CrawlPage:
+        await asyncio.sleep(np.random.uniform(*self.config.sleep_range))
+        response: Response = await self.session.post(
+            BMALL_LIST_URL,
+            json=request.to_payload(next_id),
+            referer=BMALL_REFERER,
+            cookies=self.config.cookies,
+        )
+        response.raise_for_status()
 
-        for index in range(request_index, len(requests)):
-            request = requests[index]
-            if index != request_index:
-                next_id = None
-            hit_counts = 0
+        payload: dict[str, Any] = response.json()
+        return CrawlPage(
+            items=payload["data"]["data"],
+            next_id=payload["data"]["nextId"],
+        )
 
-            while True:
-                if await self._should_stop(control, progress_callback, index, next_id):
-                    return CrawlerRunSummary(
-                        status="stopped",
-                        total_items=total_items,
-                        written_items=written_items,
-                        skipped_duplicates=skipped_duplicates,
-                        request_index=index,
-                        next_id=next_id,
-                        message="用户停止了爬虫",
-                    )
+    async def _store_page_items(
+        self,
+        page: CrawlPage,
+        context: CrawlRunContext,
+    ) -> int:
+        context.next_id = page.next_id
+        new_items, duplicate_count = self._dedupe_items(page.items, context.seen_item_ids)
+        context.skipped_duplicates += duplicate_count
 
-                try:
-                    await asyncio.sleep(np.random.uniform(*config.sleep_range))
+        if new_items:
+            async with aiofiles.open(self.config.data_path, "ab") as f:
+                await f.write(b"".join(orjson.dumps(item) + b"\n" for item in new_items))
 
-                    response: Response = await self.session.post(
-                        url,
-                        json=request.to_payload(next_id),
-                        referer=referer,
-                        cookies=cookies,
-                    )
-                    response.raise_for_status()
+        context.total_items += len(new_items)
+        context.written_items += len(new_items)
+        return len(new_items)
 
-                    if hit_counts > 0:
-                        hit_counts = 0
+    async def _save_running_state(self, context: CrawlRunContext, request_index: int) -> None:
+        await self._save_next_id(context.next_id)
+        await self._save_state(
+            {
+                "fingerprint": context.fingerprint,
+                "config": self.config.to_state(),
+                "request_index": request_index,
+                "next_id": context.next_id,
+                "completed": False,
+                "updated_at": time.time(),
+            }
+        )
 
-                    json_: dict[str, Any] = response.json()
-                    data: list[dict[str, Any]] = json_["data"]["data"]
-                    next_id = json_["data"]["nextId"]
-                    new_data, duplicate_count = self._dedupe_items(data, seen_item_ids)
-                    skipped_duplicates += duplicate_count
+    async def _save_completed_request_state(
+        self,
+        context: CrawlRunContext,
+        request_index: int,
+    ) -> None:
+        await self._save_state(
+            {
+                "fingerprint": context.fingerprint,
+                "config": self.config.to_state(),
+                "request_index": request_index + 1,
+                "next_id": None,
+                "completed": request_index + 1 >= len(context.requests),
+                "updated_at": time.time(),
+            }
+        )
 
-                    if new_data:
-                        async with aiofiles.open(config.data_path, "ab") as f:
-                            await f.write(
-                                b"".join(orjson.dumps(item) + b"\n" for item in new_data)
-                            )
+    def _emit_running_progress(
+        self,
+        progress_callback: ProgressCallback | None,
+        *,
+        context: CrawlRunContext,
+        request: CrawlRequest,
+        request_index: int,
+        fetched_items: int,
+    ) -> None:
+        self._emit_progress(
+            progress_callback,
+            status="running",
+            request_index=request_index,
+            request_count=len(context.requests),
+            sort_type=request.sort_type.value,
+            next_id=context.next_id,
+            fetched_items=fetched_items,
+            written_items=context.written_items,
+            skipped_duplicates=context.skipped_duplicates,
+            total_items=context.total_items,
+            elapsed_seconds=time.time() - context.started_at,
+        )
 
-                    total_items += len(new_data)
-                    written_items += len(new_data)
-                    logger.info(
-                        "Fetched %s items, wrote %s new items, total %s items",
-                        len(data),
-                        len(new_data),
-                        total_items,
-                    )
+    def _emit_error_progress(
+        self,
+        progress_callback: ProgressCallback | None,
+        *,
+        context: CrawlRunContext,
+        request: CrawlRequest,
+        request_index: int,
+        error: str,
+        hit_counts: int,
+    ) -> None:
+        self._emit_progress(
+            progress_callback,
+            status="error",
+            request_index=request_index,
+            request_count=len(context.requests),
+            sort_type=request.sort_type.value,
+            next_id=context.next_id,
+            error=error,
+            hit_counts=hit_counts,
+            total_items=context.total_items,
+        )
 
-                    await self._save_next_id(next_id)
-                    await self._save_state(
-                        {
-                            "fingerprint": fingerprint,
-                            "config": config.to_state(),
-                            "request_index": index,
-                            "next_id": next_id,
-                            "completed": False,
-                            "updated_at": time.time(),
-                        }
-                    )
-                    self._emit_progress(
-                        progress_callback,
-                        status="running",
-                        request_index=index,
-                        request_count=len(requests),
-                        sort_type=request.sort_type.value,
-                        next_id=next_id,
-                        fetched_items=len(data),
-                        written_items=written_items,
-                        skipped_duplicates=skipped_duplicates,
-                        total_items=total_items,
-                        elapsed_seconds=time.time() - started_at,
-                    )
-
-                    if next_id is None:
-                        break
-
-                except Exception as exc:
-                    logger.error(f"{exc.__class__.__name__} - {exc}")
-                    await asyncio.sleep(np.random.uniform(*config.error_extra_sleep_range))
-                    hit_counts += 1
-                    self._emit_progress(
-                        progress_callback,
-                        status="error",
-                        request_index=index,
-                        request_count=len(requests),
-                        sort_type=request.sort_type.value,
-                        next_id=next_id,
-                        error=f"{exc.__class__.__name__}: {exc}",
-                        hit_counts=hit_counts,
-                        total_items=total_items,
-                    )
-                    if hit_counts >= config.max_retries:
-                        logger.critical("Too many http errors, stop fetching")
-                        return CrawlerRunSummary(
-                            status="failed",
-                            total_items=total_items,
-                            written_items=written_items,
-                            skipped_duplicates=skipped_duplicates,
-                            request_index=index,
-                            next_id=next_id,
-                            message=f"连续错误达到 {config.max_retries} 次，已停止",
-                        )
-
-            await self._save_state(
-                {
-                    "fingerprint": fingerprint,
-                    "config": config.to_state(),
-                    "request_index": index + 1,
-                    "next_id": None,
-                    "completed": index + 1 >= len(requests),
-                    "updated_at": time.time(),
-                }
-            )
-
-        logger.info(f"All data fetched, total {total_items} items")
+    def _summary(
+        self,
+        *,
+        status: str,
+        context: CrawlRunContext,
+        request_index: int,
+        message: str,
+    ) -> CrawlerRunSummary:
         return CrawlerRunSummary(
-            status="completed",
-            total_items=total_items,
-            written_items=written_items,
-            skipped_duplicates=skipped_duplicates,
-            request_index=len(requests),
-            next_id=None,
-            message="抓取完成",
+            status=status,
+            total_items=context.total_items,
+            written_items=context.written_items,
+            skipped_duplicates=context.skipped_duplicates,
+            request_index=request_index,
+            next_id=context.next_id,
+            message=message,
         )
 
     async def _load_state(self) -> dict[str, Any]:
@@ -469,7 +560,7 @@ class BMallSpider:
                 request_index=request_index,
                 next_id=next_id,
             )
-            await asyncio.sleep(0.25)
+            await asyncio.sleep(PAUSE_POLL_SECONDS)
         return control.is_stopped
 
     def _emit_progress(self, progress_callback: ProgressCallback | None, **payload: Any) -> None:
