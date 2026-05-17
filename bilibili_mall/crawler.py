@@ -13,6 +13,16 @@ from curl_cffi.requests.exceptions import HTTPError
 from .crawler_options import DiscountFilters, PieceFilters, SortType
 from .utils import logger
 
+ERROR_BACKOFF_MIN_SECONDS = 0.3
+ERROR_BACKOFF_MAX_SECONDS = 3.0
+
+
+def error_backoff_seconds(hit_counts: int) -> float:
+    return min(
+        ERROR_BACKOFF_MAX_SECONDS,
+        ERROR_BACKOFF_MIN_SECONDS * 2 ** max(hit_counts - 1, 0),
+    )
+
 
 class BMallSpider:
     def __init__(self):
@@ -67,9 +77,9 @@ class BMallSpider:
             "nextId": next_id,
             "sortType": SortType.PRICE_DESC.value,
             "priceFilters": (
-                # PieceFilters.BELOW_TWENTY.value
-                # + PieceFilters.TWENTY2THIRTY.value
-                PieceFilters.THIRTY2FIFTY.value
+                PieceFilters.BELOW_TWENTY.value
+                + PieceFilters.TWENTY2THIRTY.value
+                + PieceFilters.THIRTY2FIFTY.value
                 + PieceFilters.FIFTY2HUNDRED.value
                 + PieceFilters.HUNDRED2TWO_HUNDRED.value
                 + PieceFilters.OVER_TWO_HUNDRED.value
@@ -118,12 +128,9 @@ class BMallSpider:
 
             except Exception as exc:
                 logger.error(f"{exc.__class__.__name__} - {exc}")
-                await asyncio.sleep(
-                    np.random.uniform(0.25, 0.5),
-                )
-
                 # HTTP 请求错误，累计错误命中计数
                 HIT_COUNTS += 1
+                await asyncio.sleep(error_backoff_seconds(HIT_COUNTS))
                 # 当大于最大重试次数时，停止抓取（此时很有可能已经被平台封禁），而小于最大重试次数时，继续抓取（有可能是网络问题，或者只是短暂的刷屏速度过快，服务器并未封禁账号）
                 if HIT_COUNTS >= MAX_RETRIES:
                     logger.critical("Too many http errors, stop fetching")
