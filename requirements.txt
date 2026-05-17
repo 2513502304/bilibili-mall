@@ -1,0 +1,7 @@
+aiofiles>=25.1.0
+curl-cffi>=0.13.0
+numpy>=2.3.3
+orjson>=3.11.3
+pandas>=2.3.3
+rich>=14.2.0
+streamlit>=1.53.1

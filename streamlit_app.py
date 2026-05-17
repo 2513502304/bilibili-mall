@@ -13,7 +13,6 @@ import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from bilibili_mall.app_config import configured_value, slider_bounds
-from bilibili_mall.crawler_panel import render_crawler_runner
 
 
 ROOT = Path(__file__).resolve().parent
@@ -292,6 +291,18 @@ def configured_data_url() -> str:
     )
 
 
+def configured_bool(key: str, *, default: bool = False) -> bool:
+    value = configured_value(
+        key,
+        env=os.environ,
+        secret_getter=st.secrets.get,
+        missing_secret_errors=(StreamlitSecretNotFoundError,),
+    )
+    if not value:
+        return default
+    return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
 def filter_items(
     df: pd.DataFrame,
     query: str,
@@ -534,8 +545,11 @@ def render_table(results: pd.DataFrame) -> None:
     )
 
 
-with st.expander("运行爬虫", icon=":material/play_arrow:", expanded=False):
-    render_crawler_runner(ROOT / "Data", load_items.clear)
+if configured_bool("BMALL_ENABLE_CRAWLER_PANEL"):
+    from bilibili_mall.crawler_panel import render_crawler_runner
+
+    with st.expander("运行爬虫", icon=":material/play_arrow:", expanded=False):
+        render_crawler_runner(ROOT / "Data", load_items.clear)
 
 render_header()
 
