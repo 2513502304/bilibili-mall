@@ -20,6 +20,8 @@ from .utils import logger
 
 BMALL_LIST_URL = "https://mall.bilibili.com/mall-magic-c/internet/c2c/v2/list"
 BMALL_REFERER = "https://mall.bilibili.com/neul-next/index.html?page=magic-market_index"
+ERROR_BACKOFF_MIN_SECONDS = 0.3
+ERROR_BACKOFF_MAX_SECONDS = 3.0
 PAUSE_POLL_SECONDS = 0.25
 
 
@@ -74,6 +76,13 @@ def detect_env_proxy() -> str | None:
         if value:
             return value
     return None
+
+
+def error_backoff_seconds(hit_counts: int) -> float:
+    return min(
+        ERROR_BACKOFF_MAX_SECONDS,
+        ERROR_BACKOFF_MIN_SECONDS * 2 ** max(hit_counts - 1, 0),
+    )
 
 
 def _enum_tuple(enum_type: type[Enum], values: tuple[Enum | str, ...]) -> tuple[Enum, ...]:
@@ -299,8 +308,8 @@ class BMallSpider:
 
                 except Exception as exc:
                     logger.error(f"{exc.__class__.__name__} - {exc}")
-                    await asyncio.sleep(np.random.uniform(*self.config.error_extra_sleep_range))
                     hit_counts += 1
+                    await asyncio.sleep(error_backoff_seconds(hit_counts))
                     self._emit_error_progress(
                         progress_callback,
                         context=context,

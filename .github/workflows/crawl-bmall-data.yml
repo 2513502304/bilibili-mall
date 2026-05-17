@@ -57,7 +57,7 @@ jobs:
           fi
 
       - name: Crawl data
-        run: uv run python scripts/crawl_bmall_data.py
+        run: uv run python -m scripts.crawl_bmall_data
 
       - name: Compress latest data
         run: gzip -c Data/bmall_all_data.jsonl > Data/bmall_all_data.jsonl.gz

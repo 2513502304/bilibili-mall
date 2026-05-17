@@ -9,6 +9,7 @@ from bilibili_mall.interactive_crawler import (
     CrawlerConfig,
     clear_crawl_outputs,
     detect_env_proxy,
+    error_backoff_seconds,
     parse_cookie_header,
     read_crawl_state,
 )
@@ -90,6 +91,14 @@ class CrawlerConfigTest(unittest.TestCase):
 
     def test_sleep_range_defaults_to_more_conservative_interval(self):
         self.assertEqual(CrawlerConfig().sleep_range, (1.25, 1.5))
+
+    def test_error_backoff_exponentially_increases_and_caps_at_three_seconds(self):
+        self.assertEqual(error_backoff_seconds(1), 0.3)
+        self.assertEqual(error_backoff_seconds(2), 0.6)
+        self.assertEqual(error_backoff_seconds(3), 1.2)
+        self.assertEqual(error_backoff_seconds(4), 2.4)
+        self.assertEqual(error_backoff_seconds(5), 3.0)
+        self.assertEqual(error_backoff_seconds(10), 3.0)
 
     def test_config_state_round_trips_enum_names(self):
         config = CrawlerConfig(
