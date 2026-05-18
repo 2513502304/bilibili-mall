@@ -22,6 +22,9 @@ DETAIL_URL = (
     "https://mall.bilibili.com/neul-next/index.html"
     "?page=magic-market_detail&noTitleBar=1&itemsId={items_id}&from=market_index"
 )
+FOCUS_STATE_KEY = "focused_duplicate_item"
+PENDING_RESULT_PAGE_KEY = "pending_result_page"
+ACTIVE_DUPLICATE_COUNT_COLUMN = "activeDuplicateCount"
 
 st.set_page_config(
     page_title="Bilibili mall finder",
@@ -262,6 +265,9 @@ def _prepare_items(df: pd.DataFrame) -> pd.DataFrame:
     df["detailKey"] = df["detailName"].apply(_normalize_text_key)
     df["primaryItemKey"] = df["detailKey"].where(df["detailKey"].ne(""), df["titleKey"])
     df["titleDuplicateCount"] = df.groupby("titleKey")["titleKey"].transform("size")
+    df["primaryItemDuplicateCount"] = df.groupby("primaryItemKey")[
+        "primaryItemKey"
+    ].transform("size")
     return df
 
 
@@ -375,6 +381,124 @@ def sort_items(df: pd.DataFrame, sort_mode: str) -> pd.DataFrame:
     )
 
 
+def duplicate_key_column(duplicate_key_mode: str) -> str:
+    return {
+        "按商品标题": "titleKey",
+        "按首个明细商品": "primaryItemKey",
+    }[duplicate_key_mode]
+
+
+def duplicate_count_column(duplicate_key_mode: str) -> str:
+    return {
+        "按商品标题": "titleDuplicateCount",
+        "按首个明细商品": "primaryItemDuplicateCount",
+    }[duplicate_key_mode]
+
+
+def attach_active_duplicate_counts(
+    df: pd.DataFrame,
+    duplicate_key_mode: str,
+) -> pd.DataFrame:
+    result = df.copy()
+    key_column = duplicate_key_column(duplicate_key_mode)
+    if result.empty or key_column not in result.columns:
+        result[ACTIVE_DUPLICATE_COUNT_COLUMN] = pd.Series(
+            index=result.index,
+            dtype="int64",
+        )
+        return result
+
+    result[ACTIVE_DUPLICATE_COUNT_COLUMN] = result.groupby(key_column)[
+        key_column
+    ].transform("size")
+    return result
+
+
+def duplicate_count(row: pd.Series, duplicate_key_mode: str) -> int:
+    value = row.get(ACTIVE_DUPLICATE_COUNT_COLUMN)
+    if value is None or pd.isna(value):
+        value = row.get(duplicate_count_column(duplicate_key_mode), 1)
+    if pd.isna(value):
+        return 1
+    return int(value)
+
+
+def focus_label(row: pd.Series) -> str:
+    return str(row.get("c2cItemsName") or "这件商品")
+
+
+def request_result_page(page: int) -> None:
+    st.session_state[PENDING_RESULT_PAGE_KEY] = max(1, int(page))
+
+
+def apply_requested_result_page(page_count: int) -> None:
+    requested_page = st.session_state.pop(PENDING_RESULT_PAGE_KEY, None)
+    if requested_page is not None:
+        st.session_state["result_page"] = min(max(1, int(requested_page)), page_count)
+    elif "result_page" not in st.session_state:
+        st.session_state["result_page"] = 1
+    elif st.session_state["result_page"] > page_count:
+        st.session_state["result_page"] = page_count
+
+
+def focus_duplicate_item(row: pd.Series, duplicate_key_mode: str) -> None:
+    key_column = duplicate_key_column(duplicate_key_mode)
+    key_value = str(row.get(key_column) or "")
+    if not key_value:
+        return
+    st.session_state[FOCUS_STATE_KEY] = {
+        "key_column": key_column,
+        "key_value": key_value,
+        "label": focus_label(row),
+        "return_page": int(st.session_state.get("result_page", 1)),
+    }
+    request_result_page(1)
+
+
+def clear_duplicate_focus(*, restore_page: bool = False) -> None:
+    focus = st.session_state.pop(FOCUS_STATE_KEY, None)
+    if restore_page and focus:
+        request_result_page(int(focus.get("return_page") or 1))
+
+
+def focused_duplicates(df: pd.DataFrame, focus: dict[str, str]) -> pd.DataFrame:
+    key_column = focus.get("key_column")
+    key_value = focus.get("key_value")
+    if not key_column or key_column not in df.columns or not key_value:
+        return df.iloc[0:0]
+    return df[df[key_column].astype(str).eq(key_value)]
+
+
+def sort_focused_duplicates(df: pd.DataFrame) -> pd.DataFrame:
+    return df.sort_values(
+        ["priceYuan", "rowNumber"],
+        ascending=[True, False],
+        na_position="last",
+    )
+
+
+def results_table_key(
+    results: pd.DataFrame,
+    duplicate_key_mode: str,
+    *,
+    focus_enabled: bool,
+    page: int,
+) -> str:
+    parts = [duplicate_key_mode, str(int(focus_enabled)), str(page), str(len(results))]
+    if not results.empty:
+        first = results.iloc[0]
+        last = results.iloc[-1]
+        parts.extend(
+            [
+                str(first.get("rowNumber", "")),
+                str(last.get("rowNumber", "")),
+                str(first.get("c2cItemsId", "")),
+                str(last.get("c2cItemsId", "")),
+            ]
+        )
+    return "results_table_" + re.sub(r"[^0-9A-Za-z_]+", "_", "_".join(parts))
+
+
 def reduce_duplicates(
     df: pd.DataFrame,
     duplicate_mode: str,
@@ -384,10 +508,7 @@ def reduce_duplicates(
     if duplicate_mode == "不过滤重复":
         return df
 
-    key_column = {
-        "按商品标题": "titleKey",
-        "按首个明细商品": "primaryItemKey",
-    }[duplicate_key_mode]
+    key_column = duplicate_key_column(duplicate_key_mode)
     keep_n = 1 if duplicate_mode == "每个商品只保留最低价" else duplicate_keep_n
     ranked = df.sort_values(
         [key_column, "priceYuan", "rowNumber"],
@@ -423,7 +544,12 @@ def render_header() -> None:
     )
 
 
-def render_cards(results: pd.DataFrame) -> None:
+def render_cards(
+    results: pd.DataFrame,
+    duplicate_key_mode: str,
+    *,
+    focus_enabled: bool,
+) -> None:
     for _, row in results.iterrows():
         with st.container(border=True):
             image_col, info_col, action_col = st.columns(
@@ -486,9 +612,10 @@ def render_cards(results: pd.DataFrame) -> None:
                     badges.append(
                         f'<span class="soft-badge">多件 x{int(row["totalItemsCount"])}</span>'
                     )
-                if int(row.get("titleDuplicateCount", 1)) > 1:
+                row_duplicate_count = duplicate_count(row, duplicate_key_mode)
+                if row_duplicate_count > 1:
                     badges.append(
-                        f'<span class="soft-badge">重复 {int(row["titleDuplicateCount"])} 条</span>'
+                        f'<span class="soft-badge">重复 {row_duplicate_count} 条</span>'
                     )
                 if badges:
                     st.markdown(
@@ -501,10 +628,32 @@ def render_cards(results: pd.DataFrame) -> None:
                     icon=":material/open_in_new:",
                     use_container_width=True,
                 )
+                if focus_enabled and row_duplicate_count > 1:
+                    if st.button(
+                        "查看重复项",
+                        icon=":material/filter_center_focus:",
+                        use_container_width=True,
+                        key=f"focus_duplicate_{row.get('rowNumber')}_{row.get('c2cItemsId')}",
+                    ):
+                        focus_duplicate_item(row, duplicate_key_mode)
+                        st.rerun()
 
 
-def render_table(results: pd.DataFrame) -> None:
-    table = results[
+def render_table(
+    results: pd.DataFrame,
+    duplicate_key_mode: str,
+    *,
+    focus_enabled: bool,
+    table_key: str,
+) -> pd.Series | None:
+    table_source = results.copy()
+    count_column = (
+        ACTIVE_DUPLICATE_COUNT_COLUMN
+        if ACTIVE_DUPLICATE_COUNT_COLUMN in table_source.columns
+        else duplicate_count_column(duplicate_key_mode)
+    )
+    table_source["currentDuplicateCount"] = table_source.get(count_column, 1)
+    table = table_source[
         [
             "imageUrl",
             "c2cItemsName",
@@ -512,7 +661,7 @@ def render_table(results: pd.DataFrame) -> None:
             "marketYuan",
             "discountPct",
             "totalItemsCount",
-            "titleDuplicateCount",
+            "currentDuplicateCount",
             "uname",
             "c2cItemsLink",
         ]
@@ -524,17 +673,18 @@ def render_table(results: pd.DataFrame) -> None:
             "marketYuan": "市场价",
             "discountPct": "优惠比例",
             "totalItemsCount": "库存",
-            "titleDuplicateCount": "重复数",
+            "currentDuplicateCount": "重复数",
             "uname": "卖家",
             "c2cItemsLink": "链接",
         }
     )
-    st.dataframe(
-        table,
-        hide_index=True,
-        use_container_width=True,
-        height=min(720, 84 + len(table) * 72),
-        column_config={
+    dataframe_kwargs: dict[str, Any] = {
+        "data": table,
+        "key": table_key,
+        "hide_index": True,
+        "use_container_width": True,
+        "height": min(720, 84 + len(table) * 72),
+        "column_config": {
             "缩略图": st.column_config.ImageColumn(width="small"),
             "商品名称": st.column_config.TextColumn(width="large", pinned=True),
             "价格": st.column_config.NumberColumn(format="¥%.2f"),
@@ -542,7 +692,26 @@ def render_table(results: pd.DataFrame) -> None:
             "优惠比例": st.column_config.NumberColumn(format="%.0f%%"),
             "链接": st.column_config.LinkColumn(display_text="打开"),
         },
-    )
+    }
+    if focus_enabled:
+        dataframe_kwargs["on_select"] = "rerun"
+        dataframe_kwargs["selection_mode"] = "single-row"
+
+    selection_state = st.dataframe(**dataframe_kwargs)
+    if not focus_enabled:
+        return None
+
+    selection = getattr(selection_state, "selection", {})
+    if hasattr(selection, "get"):
+        selected_rows = selection.get("rows", [])
+    else:
+        selected_rows = getattr(selection, "rows", [])
+    if not selected_rows:
+        return None
+    selected_position = int(selected_rows[0])
+    if selected_position < 0 or selected_position >= len(results):
+        return None
+    return results.iloc[selected_position]
 
 
 if configured_bool("BMALL_ENABLE_CRAWLER_PANEL"):
@@ -694,26 +863,57 @@ with st.sidebar:
             use_container_width=True,
         )
         if submitted:
-            st.session_state["result_page"] = 1
+            clear_duplicate_focus()
+            request_result_page(1)
 
-base_filtered = filter_items(
-    data,
-    query=query,
-    price_range=price_range,
-    quantity_mode=quantity_mode,
-    product_type=product_type,
-    hidden_mode=hidden_mode,
-    search_mode=search_mode,
-    with_image=with_image,
-    min_discount=min_discount,
+base_filtered = attach_active_duplicate_counts(
+    filter_items(
+        data,
+        query=query,
+        price_range=price_range,
+        quantity_mode=quantity_mode,
+        product_type=product_type,
+        hidden_mode=hidden_mode,
+        search_mode=search_mode,
+        with_image=with_image,
+        min_discount=min_discount,
+    ),
+    duplicate_key_mode,
 )
-deduped = reduce_duplicates(
-    base_filtered,
-    duplicate_mode=duplicate_mode,
-    duplicate_key_mode=duplicate_key_mode,
-    duplicate_keep_n=duplicate_keep_n,
-)
-filtered = sort_items(deduped, sort_mode)
+duplicate_focus = st.session_state.get(FOCUS_STATE_KEY)
+if duplicate_focus:
+    focused = focused_duplicates(base_filtered, duplicate_focus)
+    filtered = sort_focused_duplicates(focused)
+    focus_enabled = False
+else:
+    deduped = reduce_duplicates(
+        base_filtered,
+        duplicate_mode=duplicate_mode,
+        duplicate_key_mode=duplicate_key_mode,
+        duplicate_keep_n=duplicate_keep_n,
+    )
+    filtered = sort_items(deduped, sort_mode)
+    focus_enabled = True
+
+if duplicate_focus:
+    focus_label_text = duplicate_focus.get("label") or "这件商品"
+    focus_message_col, focus_action_col = st.columns(
+        [4, 1],
+        vertical_alignment="center",
+    )
+    with focus_message_col:
+        st.info(
+            f"正在查看「{focus_label_text}」的重复项。左侧筛选仍然生效，结果按价格从低到高排列。",
+            icon=":material/filter_center_focus:",
+        )
+    with focus_action_col:
+        if st.button(
+            "返回查询视图",
+            icon=":material/arrow_back:",
+            use_container_width=True,
+        ):
+            clear_duplicate_focus(restore_page=True)
+            st.rerun()
 
 metric_cols = st.columns(4)
 metric_cols[0].metric("数据量", f"{len(data):,}")
@@ -764,13 +964,16 @@ with right:
     )
 
 if filtered.empty:
-    st.info("没有匹配结果，可以放宽关键词、价格区间或优惠比例。", icon=":material/info:")
+    if duplicate_focus:
+        st.info(
+            "当前筛选条件下没有找到这件商品的重复项，可以返回查询视图或放宽左侧筛选。",
+            icon=":material/info:",
+        )
+    else:
+        st.info("没有匹配结果，可以放宽关键词、价格区间或优惠比例。", icon=":material/info:")
 else:
     page_count = max(1, math.ceil(len(filtered) / page_size))
-    if "result_page" not in st.session_state:
-        st.session_state["result_page"] = 1
-    if st.session_state["result_page"] > page_count:
-        st.session_state["result_page"] = page_count
+    apply_requested_result_page(page_count)
 
     page_col, caption_col = st.columns([1, 3], vertical_alignment="center")
     with page_col:
@@ -789,6 +992,34 @@ else:
 
     page_results = paginate(filtered, page, page_size)
     if view == "数据表格":
-        render_table(page_results)
+        selected_row = render_table(
+            page_results,
+            duplicate_key_mode,
+            focus_enabled=focus_enabled,
+            table_key=results_table_key(
+                page_results,
+                duplicate_key_mode,
+                focus_enabled=focus_enabled,
+                page=page,
+            ),
+        )
+        if selected_row is not None:
+            selected_duplicate_count = duplicate_count(selected_row, duplicate_key_mode)
+            if selected_duplicate_count > 1:
+                st.caption(
+                    "已选中一件商品，可以聚焦查看它在当前筛选条件下的重复项。"
+                )
+                if st.button(
+                    "查看选中商品重复项",
+                    icon=":material/filter_center_focus:",
+                ):
+                    focus_duplicate_item(selected_row, duplicate_key_mode)
+                    st.rerun()
+            else:
+                st.caption("选中商品暂无重复项。")
     else:
-        render_cards(page_results)
+        render_cards(
+            page_results,
+            duplicate_key_mode,
+            focus_enabled=focus_enabled,
+        )
