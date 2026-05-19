@@ -66,6 +66,7 @@ uv run streamlit run streamlit_app.py
 | `BMALL_COOKIE` | 爬虫使用的会员购访问 Cookie |
 | `BMALL_PROXY` | GitHub Actions 或部署环境中的可选代理 |
 | `HTTP_PROXY` / `HTTPS_PROXY` | 通用代理环境变量 |
+| `BMALL_DATA_RETENTION_DAYS` | 自动更新数据的保留天数，默认 15 天 |
 | `BMALL_ENABLE_CRAWLER_PANEL` | 是否在 Streamlit 页面显示本地爬虫面板，默认关闭 |
 
 公开部署时建议只开启市场预览页面，不开放在线爬虫控制面板。

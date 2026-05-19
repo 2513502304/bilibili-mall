@@ -1,11 +1,19 @@
 import os
 import asyncio
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import orjson
+
 from bilibili_mall.interactive_crawler import (
+    DATA_RETENTION_DAYS,
+    RECORDED_AT_FIELD,
+    BMallSpider,
+    CrawlPage,
+    CrawlRunContext,
     CrawlerConfig,
     clear_crawl_outputs,
     detect_env_proxy,
@@ -92,6 +100,12 @@ class CrawlerConfigTest(unittest.TestCase):
     def test_sleep_range_defaults_to_more_conservative_interval(self):
         self.assertEqual(CrawlerConfig().sleep_range, (1.25, 1.5))
 
+    def test_data_retention_defaults_to_market_listing_lifetime(self):
+        self.assertEqual(CrawlerConfig().data_retention_days, DATA_RETENTION_DAYS)
+
+    def test_data_retention_keeps_at_least_one_day(self):
+        self.assertEqual(CrawlerConfig(data_retention_days=0).data_retention_days, 1)
+
     def test_error_backoff_exponentially_increases_and_caps_at_three_seconds(self):
         self.assertEqual(error_backoff_seconds(1), 0.3)
         self.assertEqual(error_backoff_seconds(2), 0.6)
@@ -149,6 +163,75 @@ class CrawlerConfigTest(unittest.TestCase):
             self.assertEqual(read_crawl_state(data_dir), {})
             (data_dir / "bmall_crawl_state.json").write_text("{", encoding="utf-8")
             self.assertEqual(read_crawl_state(data_dir), {})
+
+    def test_prepare_run_migrates_legacy_rows_and_drops_expired_rows(self):
+        async def run_case(data_dir: Path):
+            config = CrawlerConfig(cookie_header="SESSDATA=abc", data_dir=data_dir)
+            spider = BMallSpider(config)
+            try:
+                return await spider._prepare_run(reset=False, restart=False)
+            finally:
+                await spider.close()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            data_path = data_dir / "bmall_all_data.jsonl"
+            now = int(time.time())
+            expired_timestamp = now - (DATA_RETENTION_DAYS + 1) * 24 * 60 * 60
+            recent_timestamp = now - 60
+            data_path.write_text(
+                "\n".join(
+                    [
+                        '{"c2cItemsId": "legacy"}',
+                        f'{{"c2cItemsId": "expired", "{RECORDED_AT_FIELD}": {expired_timestamp}}}',
+                        f'{{"c2cItemsId": "recent", "{RECORDED_AT_FIELD}": {recent_timestamp}}}',
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            context = asyncio.run(run_case(data_dir))
+            rows = [
+                orjson.loads(line)
+                for line in data_path.read_bytes().splitlines()
+            ]
+
+            self.assertEqual(context.total_items, 2)
+            self.assertEqual(context.dropped_expired_items, 1)
+            self.assertEqual(context.migrated_legacy_items, 1)
+            self.assertEqual({row["c2cItemsId"] for row in rows}, {"legacy", "recent"})
+            self.assertTrue(all(RECORDED_AT_FIELD in row for row in rows))
+
+    def test_store_page_items_adds_recorded_at_to_new_rows(self):
+        async def run_case(data_dir: Path):
+            config = CrawlerConfig(cookie_header="SESSDATA=abc", data_dir=data_dir)
+            spider = BMallSpider(config)
+            context = CrawlRunContext(
+                requests=config.build_requests(),
+                fingerprint=config.fingerprint(),
+                request_index=0,
+                next_id=None,
+                total_items=0,
+                seen_item_ids=set(),
+            )
+            try:
+                await spider._store_page_items(
+                    CrawlPage(items=[{"c2cItemsId": "new"}], next_id=None),
+                    context,
+                )
+            finally:
+                await spider.close()
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            data_dir = Path(temp_dir)
+            asyncio.run(run_case(data_dir))
+            row = orjson.loads(
+                (data_dir / "bmall_all_data.jsonl").read_bytes().splitlines()[0]
+            )
+
+            self.assertEqual(row["c2cItemsId"], "new")
+            self.assertIsInstance(row[RECORDED_AT_FIELD], int)
 
 
 if __name__ == "__main__":

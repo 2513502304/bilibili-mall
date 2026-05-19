@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import os
+import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -23,6 +24,9 @@ BMALL_REFERER = "https://mall.bilibili.com/neul-next/index.html?page=magic-marke
 ERROR_BACKOFF_MIN_SECONDS = 0.3
 ERROR_BACKOFF_MAX_SECONDS = 3.0
 PAUSE_POLL_SECONDS = 0.25
+RECORDED_AT_FIELD = "recordedAt"
+DATA_RETENTION_DAYS = 15
+SECONDS_PER_DAY = 24 * 60 * 60
 
 
 def crawl_data_path(data_dir: Path | str) -> Path:
@@ -85,6 +89,41 @@ def error_backoff_seconds(hit_counts: int) -> float:
     )
 
 
+def parse_recorded_at(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        timestamp = int(value)
+        return timestamp if timestamp > 0 else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            timestamp = int(float(stripped))
+        except ValueError:
+            return None
+        return timestamp if timestamp > 0 else None
+    return None
+
+
+def item_with_recorded_at(item: dict[str, Any], recorded_at: int) -> dict[str, Any]:
+    stamped_item = dict(item)
+    stamped_item[RECORDED_AT_FIELD] = recorded_at
+    return stamped_item
+
+
+def normalize_recorded_at(
+    item: dict[str, Any],
+    *,
+    fallback_recorded_at: int,
+) -> tuple[dict[str, Any], int, bool]:
+    recorded_at = parse_recorded_at(item.get(RECORDED_AT_FIELD))
+    if recorded_at is not None:
+        return item, recorded_at, False
+    return item_with_recorded_at(item, fallback_recorded_at), fallback_recorded_at, True
+
+
 def _enum_tuple(enum_type: type[Enum], values: tuple[Enum | str, ...]) -> tuple[Enum, ...]:
     result = []
     for value in values:
@@ -130,6 +169,7 @@ class CrawlerConfig:
     error_extra_sleep_range: tuple[float, float] = (0.2, 0.3)
     max_retries: int = 10
     dedupe_output: bool = True
+    data_retention_days: int = DATA_RETENTION_DAYS
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "sort_types", _enum_tuple(SortType, self.sort_types))
@@ -140,6 +180,11 @@ class CrawlerConfig:
             _enum_tuple(DiscountFilters, self.discount_filters),
         )
         object.__setattr__(self, "data_dir", Path(self.data_dir))
+        object.__setattr__(
+            self,
+            "data_retention_days",
+            max(1, int(self.data_retention_days)),
+        )
 
     @property
     def data_path(self) -> Path:
@@ -193,9 +238,18 @@ class CrawlerRunSummary:
     total_items: int = 0
     written_items: int = 0
     skipped_duplicates: int = 0
+    dropped_expired_items: int = 0
+    migrated_legacy_items: int = 0
     request_index: int = 0
     next_id: str | None = None
     message: str = ""
+
+
+@dataclass(frozen=True)
+class DataRetentionSummary:
+    kept_items: int = 0
+    dropped_expired_items: int = 0
+    migrated_legacy_items: int = 0
 
 
 @dataclass
@@ -208,6 +262,8 @@ class CrawlRunContext:
     seen_item_ids: set[str]
     written_items: int = 0
     skipped_duplicates: int = 0
+    dropped_expired_items: int = 0
+    migrated_legacy_items: int = 0
     started_at: float = field(default_factory=time.time)
 
 
@@ -347,6 +403,7 @@ class BMallSpider:
             await clear_crawl_outputs(config.data_dir, include_data=True)
         elif restart:
             await clear_crawl_outputs(config.data_dir, include_data=False)
+        retention = await self._apply_data_retention()
 
         fingerprint = config.fingerprint()
         state = await self._load_state()
@@ -358,10 +415,12 @@ class BMallSpider:
             fingerprint=fingerprint,
             request_index=int(state.get("request_index") or 0),
             next_id=state.get("next_id"),
-            total_items=await self._count_existing_items(),
+            total_items=retention.kept_items,
             seen_item_ids=(
                 await self._load_seen_item_ids() if config.dedupe_output else set()
             ),
+            dropped_expired_items=retention.dropped_expired_items,
+            migrated_legacy_items=retention.migrated_legacy_items,
         )
 
     async def _fetch_page(self, request: CrawlRequest, next_id: str | None) -> CrawlPage:
@@ -390,8 +449,14 @@ class BMallSpider:
         context.skipped_duplicates += duplicate_count
 
         if new_items:
+            recorded_at = int(time.time())
+            stored_items = [
+                item_with_recorded_at(item, recorded_at) for item in new_items
+            ]
             async with aiofiles.open(self.config.data_path, "ab") as f:
-                await f.write(b"".join(orjson.dumps(item) + b"\n" for item in new_items))
+                await f.write(
+                    b"".join(orjson.dumps(item) + b"\n" for item in stored_items)
+                )
 
         context.total_items += len(new_items)
         context.written_items += len(new_items)
@@ -484,6 +549,8 @@ class BMallSpider:
             total_items=context.total_items,
             written_items=context.written_items,
             skipped_duplicates=context.skipped_duplicates,
+            dropped_expired_items=context.dropped_expired_items,
+            migrated_legacy_items=context.migrated_legacy_items,
             request_index=request_index,
             next_id=context.next_id,
             message=message,
@@ -506,14 +573,82 @@ class BMallSpider:
         async with aiofiles.open(self.config.legacy_next_id_path, "w", encoding="utf-8") as f:
             await f.write(f"{next_id}")
 
-    async def _count_existing_items(self) -> int:
+    async def _apply_data_retention(self) -> DataRetentionSummary:
         if not await aioos.path.exists(self.config.data_path):
-            return 0
-        total = 0
-        async with aiofiles.open(self.config.data_path, "rb") as f:
-            async for _ in f:
-                total += 1
-        return total
+            return DataRetentionSummary()
+
+        now = int(time.time())
+        cutoff = now - self.config.data_retention_days * SECONDS_PER_DAY
+        kept_items = 0
+        dropped_expired_items = 0
+        migrated_legacy_items = 0
+        changed = False
+
+        temp_file = tempfile.NamedTemporaryFile(
+            delete=False,
+            dir=self.config.data_path.parent,
+            prefix=".bmall_all_data.",
+            suffix=".jsonl",
+        )
+        temp_path = Path(temp_file.name)
+        temp_file.close()
+
+        try:
+            async with (
+                aiofiles.open(self.config.data_path, "rb") as source,
+                aiofiles.open(temp_path, "wb") as destination,
+            ):
+                async for line in source:
+                    if not line.strip():
+                        changed = True
+                        continue
+                    try:
+                        item = orjson.loads(line)
+                    except orjson.JSONDecodeError:
+                        changed = True
+                        continue
+                    if not isinstance(item, dict):
+                        changed = True
+                        continue
+
+                    item, recorded_at, migrated = normalize_recorded_at(
+                        item,
+                        fallback_recorded_at=now,
+                    )
+                    if recorded_at < cutoff:
+                        dropped_expired_items += 1
+                        changed = True
+                        continue
+                    if migrated:
+                        migrated_legacy_items += 1
+                        changed = True
+
+                    kept_items += 1
+                    await destination.write(orjson.dumps(item) + b"\n")
+
+            if changed:
+                await aioos.replace(temp_path, self.config.data_path)
+            else:
+                await aioos.remove(temp_path)
+        except Exception:
+            if await aioos.path.exists(temp_path):
+                await aioos.remove(temp_path)
+            raise
+
+        if dropped_expired_items or migrated_legacy_items:
+            logger.info(
+                "Prepared existing data: kept %s items, dropped %s expired items, "
+                "migrated %s legacy items",
+                kept_items,
+                dropped_expired_items,
+                migrated_legacy_items,
+            )
+
+        return DataRetentionSummary(
+            kept_items=kept_items,
+            dropped_expired_items=dropped_expired_items,
+            migrated_legacy_items=migrated_legacy_items,
+        )
 
     async def _load_seen_item_ids(self) -> set[str]:
         if not await aioos.path.exists(self.config.data_path):

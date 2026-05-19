@@ -4,7 +4,11 @@ import asyncio
 import os
 from pathlib import Path
 
-from bilibili_mall.interactive_crawler import BMallSpider, CrawlerConfig
+from bilibili_mall.interactive_crawler import (
+    DATA_RETENTION_DAYS,
+    BMallSpider,
+    CrawlerConfig,
+)
 
 
 def _float_env(key: str, default: float) -> float:
@@ -37,6 +41,7 @@ async def main() -> int:
         sleep_range=(sleep_min, sleep_max),
         max_retries=_int_env("BMALL_MAX_RETRIES", 10),
         dedupe_output=True,
+        data_retention_days=_int_env("BMALL_DATA_RETENTION_DAYS", DATA_RETENTION_DAYS),
     )
 
     spider = BMallSpider(config)
@@ -47,11 +52,14 @@ async def main() -> int:
 
     print(
         "status={status} total_items={total} written_items={written} "
-        "skipped_duplicates={duplicates} message={message}".format(
+        "skipped_duplicates={duplicates} dropped_expired_items={expired} "
+        "migrated_legacy_items={migrated} message={message}".format(
             status=summary.status,
             total=summary.total_items,
             written=summary.written_items,
             duplicates=summary.skipped_duplicates,
+            expired=summary.dropped_expired_items,
+            migrated=summary.migrated_legacy_items,
             message=summary.message,
         )
     )
