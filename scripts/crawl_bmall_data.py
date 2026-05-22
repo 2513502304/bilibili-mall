@@ -25,6 +25,13 @@ def _int_env(key: str, default: int) -> int:
     return int(value)
 
 
+def _bool_env(key: str, default: bool) -> bool:
+    value = os.environ.get(key)
+    if value is None or not value.strip():
+        return default
+    return value.strip().casefold() in {"1", "true", "yes", "on"}
+
+
 async def main() -> int:
     cookie_header = os.environ.get("BMALL_COOKIE", "").strip()
     if not cookie_header:
@@ -33,6 +40,7 @@ async def main() -> int:
     data_dir = Path(os.environ.get("BMALL_DATA_DIR", "Data"))
     sleep_min = _float_env("BMALL_SLEEP_MIN", 1.25)
     sleep_max = _float_env("BMALL_SLEEP_MAX", 1.5)
+    reset_data = _bool_env("RESET_DATA", True)
     config = CrawlerConfig(
         cookie_header=cookie_header,
         data_dir=data_dir,
@@ -46,7 +54,7 @@ async def main() -> int:
 
     spider = BMallSpider(config)
     try:
-        summary = await spider.fetch_all(restart=True)
+        summary = await spider.fetch_all(reset=reset_data, restart=not reset_data)
     finally:
         await spider.close()
 
