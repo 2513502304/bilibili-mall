@@ -47,8 +47,8 @@ uv run streamlit run streamlit_app.py
 
 当前推荐的更新方式是使用 GitHub Actions：
 
-- 每天 UTC+8 08:00 自动运行一次。
-- 也可以在 GitHub Actions 页面手动运行。
+- 每天 UTC+8 08:00 自动运行一次，默认清空旧数据并重新抓取当前市集数据。
+- 也可以在 GitHub Actions 页面手动运行，默认同样从零重建数据。
 - Cookie 存放在 repository secret `BMALL_COOKIE` 中。
 - 更新完成后，Streamlit 页面读取最新发布的数据。
 
