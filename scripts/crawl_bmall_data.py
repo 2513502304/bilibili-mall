@@ -9,7 +9,12 @@ from bilibili_mall.interactive_crawler import (
     BMallSpider,
     CrawlerConfig,
 )
-from bilibili_mall.crawler_options import PieceFilters
+from bilibili_mall.crawler_options import (
+    ENV_PROXY_KEYS,
+    PRICE_FILTER_LABELS,
+    PieceFilters,
+)
+from bilibili_mall.utils import logger
 
 
 PRICE_FILTER_ENV = (
@@ -54,6 +59,29 @@ def _price_filters_from_env() -> tuple[PieceFilters, ...]:
     return selected
 
 
+def _has_env_proxy() -> bool:
+    return any(os.environ.get(key) for key in ENV_PROXY_KEYS)
+
+
+def _log_effective_config(config: CrawlerConfig, *, reset_data: bool) -> None:
+    price_labels = [
+        PRICE_FILTER_LABELS[price_filter] for price_filter in config.price_filters
+    ]
+    logger.info(
+        "Action crawl config: reset_data=%s, price_filters=%s, sleep_range=%.2f-%.2fs, "
+        "max_retries=%s, retention_days=%s, data_dir=%s, bmall_proxy=%s, env_proxy=%s",
+        reset_data,
+        ", ".join(price_labels),
+        config.sleep_range[0],
+        config.sleep_range[1],
+        config.max_retries,
+        config.data_retention_days,
+        config.data_dir,
+        "set" if config.proxy else "unset",
+        "set" if _has_env_proxy() else "unset",
+    )
+
+
 async def main() -> int:
     cookie_header = os.environ.get("BMALL_COOKIE", "").strip()
     if not cookie_header:
@@ -74,6 +102,7 @@ async def main() -> int:
         dedupe_output=True,
         data_retention_days=_int_env("BMALL_DATA_RETENTION_DAYS", DATA_RETENTION_DAYS),
     )
+    _log_effective_config(config, reset_data=reset_data)
 
     spider = BMallSpider(config)
     try:
