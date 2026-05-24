@@ -10,6 +10,36 @@ on:
         required: false
         type: boolean
         default: true
+      price_below_20:
+        description: "Include price range: below 20 CNY"
+        required: false
+        type: boolean
+        default: true
+      price_20_30:
+        description: "Include price range: 20-30 CNY"
+        required: false
+        type: boolean
+        default: true
+      price_30_50:
+        description: "Include price range: 30-50 CNY"
+        required: false
+        type: boolean
+        default: true
+      price_50_100:
+        description: "Include price range: 50-100 CNY"
+        required: false
+        type: boolean
+        default: true
+      price_100_200:
+        description: "Include price range: 100-200 CNY"
+        required: false
+        type: boolean
+        default: true
+      price_over_200:
+        description: "Include price range: over 200 CNY"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -33,6 +63,12 @@ jobs:
       BMALL_SLEEP_MAX: "1.5"
       BMALL_DATA_RETENTION_DAYS: "15"
       RESET_DATA: ${{ github.event_name != 'workflow_dispatch' || inputs.reset_data }}
+      BMALL_PRICE_BELOW_TWENTY: ${{ github.event_name != 'workflow_dispatch' || inputs.price_below_20 }}
+      BMALL_PRICE_TWENTY_TO_THIRTY: ${{ github.event_name != 'workflow_dispatch' || inputs.price_20_30 }}
+      BMALL_PRICE_THIRTY_TO_FIFTY: ${{ github.event_name != 'workflow_dispatch' || inputs.price_30_50 }}
+      BMALL_PRICE_FIFTY_TO_HUNDRED: ${{ github.event_name != 'workflow_dispatch' || inputs.price_50_100 }}
+      BMALL_PRICE_HUNDRED_TO_TWO_HUNDRED: ${{ github.event_name != 'workflow_dispatch' || inputs.price_100_200 }}
+      BMALL_PRICE_OVER_TWO_HUNDRED: ${{ github.event_name != 'workflow_dispatch' || inputs.price_over_200 }}
 
     steps:
       - name: Check out repository

@@ -4,6 +4,7 @@ import html
 import math
 import os
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,11 +18,13 @@ from bilibili_mall.app_config import configured_value, slider_bounds
 
 ROOT = Path(__file__).resolve().parent
 DATA_PATH = ROOT / "Data" / "bmall_all_data.jsonl"
-DATA_SCHEMA_VERSION = 2
+DATA_SCHEMA_VERSION = 3
 DETAIL_URL = (
     "https://mall.bilibili.com/neul-next/index.html"
     "?page=magic-market_detail&noTitleBar=1&itemsId={items_id}&from=market_index"
 )
+APP_TIMEZONE = timezone(timedelta(hours=8), "UTC+8")
+RECORDED_AT_FIELD = "recordedAt"
 FOCUS_STATE_KEY = "focused_duplicate_item"
 PENDING_RESULT_PAGE_KEY = "pending_result_page"
 ACTIVE_DUPLICATE_COUNT_COLUMN = "activeDuplicateCount"
@@ -234,6 +237,29 @@ def _format_yuan(value: Any) -> str:
     return f"¥{value:,.2f}"
 
 
+def _format_recorded_at(value: Any) -> str:
+    if pd.isna(value):
+        return "未知"
+
+    timestamp = float(value)
+    if timestamp <= 0:
+        return "未知"
+
+    recorded_at = datetime.fromtimestamp(timestamp, tz=APP_TIMEZONE)
+    today = datetime.now(APP_TIMEZONE).date()
+    day_delta = (today - recorded_at.date()).days
+    if day_delta == 0:
+        relative = "今天"
+    elif day_delta == 1:
+        relative = "昨天"
+    elif day_delta > 1:
+        relative = f"{day_delta} 天前"
+    else:
+        relative = "未来"
+
+    return f"{recorded_at:%Y-%m-%d %H:%M} ({relative})"
+
+
 def _prepare_items(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -252,6 +278,11 @@ def _prepare_items(df: pd.DataFrame) -> pd.DataFrame:
     )
     df["priceYuan"] = pd.to_numeric(df["price"], errors="coerce") / 100
     df["marketYuan"] = pd.to_numeric(df["showMarketPrice"], errors="coerce")
+    if RECORDED_AT_FIELD in df.columns:
+        df["recordedAtTs"] = pd.to_numeric(df[RECORDED_AT_FIELD], errors="coerce")
+    else:
+        df["recordedAtTs"] = pd.Series(pd.NA, index=df.index, dtype="Float64")
+    df["recordedAtText"] = df["recordedAtTs"].apply(_format_recorded_at)
     df["discountPct"] = (1 - df["priceYuan"] / df["marketYuan"]) * 100
     df.loc[df["marketYuan"].le(0) | df["marketYuan"].isna(), "discountPct"] = pd.NA
     df["searchText"] = (
@@ -578,6 +609,7 @@ def render_cards(
                 name = html.escape(str(row.get("c2cItemsName", "")))
                 detail = html.escape(str(row.get("detailName") or ""))
                 seller = html.escape(str(row.get("uname") or "-"))
+                recorded_at = html.escape(str(row.get("recordedAtText") or "未知"))
                 st.markdown(f'<p class="result-title">{name}</p>', unsafe_allow_html=True)
                 if detail and detail != name:
                     st.markdown(
@@ -589,6 +621,7 @@ def render_cards(
                         f'<div class="meta-line">卖家 {seller} · '
                         f'库存 {int(row.get("totalItemsCount", 0))} · '
                         f'商品 ID {row.get("c2cItemsId")}</div>'
+                        f'<div class="meta-line">入库时间 {recorded_at}</div>'
                     ),
                     unsafe_allow_html=True,
                 )
@@ -662,6 +695,7 @@ def render_table(
             "discountPct",
             "totalItemsCount",
             "currentDuplicateCount",
+            "recordedAtText",
             "uname",
             "c2cItemsLink",
         ]
@@ -674,6 +708,7 @@ def render_table(
             "discountPct": "优惠比例",
             "totalItemsCount": "库存",
             "currentDuplicateCount": "重复数",
+            "recordedAtText": "入库时间",
             "uname": "卖家",
             "c2cItemsLink": "链接",
         }
@@ -690,6 +725,7 @@ def render_table(
             "价格": st.column_config.NumberColumn(format="¥%.2f"),
             "市场价": st.column_config.NumberColumn(format="¥%.2f"),
             "优惠比例": st.column_config.NumberColumn(format="%.0f%%"),
+            "入库时间": st.column_config.TextColumn(width="medium"),
             "链接": st.column_config.LinkColumn(display_text="打开"),
         },
     }
@@ -949,6 +985,7 @@ with right:
             "discountPct",
             "totalItemsCount",
             "titleDuplicateCount",
+            "recordedAtText",
             "uname",
             "c2cItemsLink",
         ]

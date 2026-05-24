@@ -49,6 +49,8 @@ uv run streamlit run streamlit_app.py
 
 - 每天 UTC+8 08:00 自动运行一次，默认清空旧数据并重新抓取当前市集数据。
 - 也可以在 GitHub Actions 页面手动运行，默认同样从零重建数据。
+- 手动运行时可以按价格区间勾选抓取范围，例如只抓取 `100 - 200 元` 和 `200 元以上`。
+- 如果手动运行只勾选部分价格区间，本次发布的数据也只包含这些区间；下一次定时任务会恢复全量数据。
 - Cookie 存放在 repository secret `BMALL_COOKIE` 中。
 - 更新完成后，Streamlit 页面读取最新发布的数据。
 
