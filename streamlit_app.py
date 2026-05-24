@@ -245,19 +245,22 @@ def _format_recorded_at(value: Any) -> str:
     if timestamp <= 0:
         return "未知"
 
-    recorded_at = datetime.fromtimestamp(timestamp, tz=APP_TIMEZONE)
-    today = datetime.now(APP_TIMEZONE).date()
-    day_delta = (today - recorded_at.date()).days
-    if day_delta == 0:
-        relative = "今天"
-    elif day_delta == 1:
-        relative = "昨天"
-    elif day_delta > 1:
-        relative = f"{day_delta} 天前"
-    else:
-        relative = "未来"
+    try:
+        recorded_at = datetime.fromtimestamp(timestamp, tz=APP_TIMEZONE)
+        today = datetime.now(APP_TIMEZONE).date()
+        day_delta = (today - recorded_at.date()).days
+        if day_delta == 0:
+            relative = "今天"
+        elif day_delta == 1:
+            relative = "昨天"
+        elif day_delta > 1:
+            relative = f"{day_delta} 天前"
+        else:
+            relative = "未来"
 
-    return f"{recorded_at:%Y-%m-%d %H:%M} ({relative})"
+        return f"{recorded_at:%Y-%m-%d %H:%M} ({relative})"
+    except (OSError, OverflowError, ValueError):
+        return "未知"
 
 
 def _prepare_items(df: pd.DataFrame) -> pd.DataFrame:
