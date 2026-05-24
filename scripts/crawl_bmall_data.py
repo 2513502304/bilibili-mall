@@ -9,6 +9,17 @@ from bilibili_mall.interactive_crawler import (
     BMallSpider,
     CrawlerConfig,
 )
+from bilibili_mall.crawler_options import PieceFilters
+
+
+PRICE_FILTER_ENV = (
+    ("BMALL_PRICE_BELOW_TWENTY", PieceFilters.BELOW_TWENTY),
+    ("BMALL_PRICE_TWENTY_TO_THIRTY", PieceFilters.TWENTY2THIRTY),
+    ("BMALL_PRICE_THIRTY_TO_FIFTY", PieceFilters.THIRTY2FIFTY),
+    ("BMALL_PRICE_FIFTY_TO_HUNDRED", PieceFilters.FIFTY2HUNDRED),
+    ("BMALL_PRICE_HUNDRED_TO_TWO_HUNDRED", PieceFilters.HUNDRED2TWO_HUNDRED),
+    ("BMALL_PRICE_OVER_TWO_HUNDRED", PieceFilters.OVER_TWO_HUNDRED),
+)
 
 
 def _float_env(key: str, default: float) -> float:
@@ -32,6 +43,17 @@ def _bool_env(key: str, default: bool) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _price_filters_from_env() -> tuple[PieceFilters, ...]:
+    selected = tuple(
+        price_filter
+        for env_key, price_filter in PRICE_FILTER_ENV
+        if _bool_env(env_key, True)
+    )
+    if not selected:
+        raise SystemExit("At least one BMALL_PRICE_* range must be enabled")
+    return selected
+
+
 async def main() -> int:
     cookie_header = os.environ.get("BMALL_COOKIE", "").strip()
     if not cookie_header:
@@ -46,6 +68,7 @@ async def main() -> int:
         data_dir=data_dir,
         proxy=os.environ.get("BMALL_PROXY") or None,
         trust_env=True,
+        price_filters=_price_filters_from_env(),
         sleep_range=(sleep_min, sleep_max),
         max_retries=_int_env("BMALL_MAX_RETRIES", 10),
         dedupe_output=True,
