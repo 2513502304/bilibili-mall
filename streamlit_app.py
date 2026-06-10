@@ -574,8 +574,8 @@ def render_bottom_pagination(
         return
 
     st.divider()
-    caption_col, previous_col, next_col = st.columns(
-        [4, 1, 1],
+    caption_col, first_col, previous_col, next_col, last_col = st.columns(
+        [4, 1, 1, 1, 1],
         vertical_alignment="center",
     )
     with caption_col:
@@ -583,6 +583,16 @@ def render_bottom_pagination(
             f"第 {start_index:,}-{end_index:,} 条 / 共 {total_results:,} 条，"
             f"第 {page:,} / {page_count:,} 页"
         )
+    with first_col:
+        if st.button(
+            "第一页",
+            icon=":material/first_page:",
+            disabled=page <= 1,
+            use_container_width=True,
+            key="bottom_first_page",
+        ):
+            request_result_page(1)
+            st.rerun()
     with previous_col:
         if st.button(
             "上一页",
@@ -603,6 +613,16 @@ def render_bottom_pagination(
             key="bottom_next_page",
         ):
             request_result_page(page + 1)
+            st.rerun()
+    with last_col:
+        if st.button(
+            "最后一页",
+            icon=":material/last_page:",
+            disabled=page >= page_count,
+            use_container_width=True,
+            key="bottom_last_page",
+        ):
+            request_result_page(page_count)
             st.rerun()
 
 
