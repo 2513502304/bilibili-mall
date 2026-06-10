@@ -562,6 +562,70 @@ def paginate(df: pd.DataFrame, page: int, page_size: int) -> pd.DataFrame:
     return df.iloc[start:end]
 
 
+def render_bottom_pagination(
+    *,
+    page: int,
+    page_count: int,
+    start_index: int,
+    end_index: int,
+    total_results: int,
+) -> None:
+    if page_count <= 1:
+        return
+
+    st.divider()
+    caption_col, first_col, previous_col, next_col, last_col = st.columns(
+        [4, 1, 1, 1, 1],
+        vertical_alignment="center",
+    )
+    with caption_col:
+        st.caption(
+            f"第 {start_index:,}-{end_index:,} 条 / 共 {total_results:,} 条，"
+            f"第 {page:,} / {page_count:,} 页"
+        )
+    with first_col:
+        if st.button(
+            "首页",
+            icon=":material/first_page:",
+            disabled=page <= 1,
+            use_container_width=True,
+            key="bottom_first_page",
+        ):
+            request_result_page(1)
+            st.rerun()
+    with previous_col:
+        if st.button(
+            "上一页",
+            icon=":material/chevron_left:",
+            disabled=page <= 1,
+            use_container_width=True,
+            key="bottom_previous_page",
+        ):
+            request_result_page(page - 1)
+            st.rerun()
+    with next_col:
+        if st.button(
+            "下一页",
+            icon=":material/chevron_right:",
+            disabled=page >= page_count,
+            type="primary",
+            use_container_width=True,
+            key="bottom_next_page",
+        ):
+            request_result_page(page + 1)
+            st.rerun()
+    with last_col:
+        if st.button(
+            "末页",
+            icon=":material/last_page:",
+            disabled=page >= page_count,
+            use_container_width=True,
+            key="bottom_last_page",
+        ):
+            request_result_page(page_count)
+            st.rerun()
+
+
 def render_header() -> None:
     """Render the product-facing app header without storage or runtime details."""
     st.markdown(
@@ -1063,3 +1127,11 @@ else:
             duplicate_key_mode,
             focus_enabled=focus_enabled,
         )
+
+    render_bottom_pagination(
+        page=page,
+        page_count=page_count,
+        start_index=start_index,
+        end_index=end_index,
+        total_results=len(filtered),
+    )
