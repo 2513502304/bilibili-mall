@@ -585,7 +585,7 @@ def render_bottom_pagination(
         )
     with first_col:
         if st.button(
-            "第一页",
+            "首页",
             icon=":material/first_page:",
             disabled=page <= 1,
             use_container_width=True,
@@ -616,7 +616,7 @@ def render_bottom_pagination(
             st.rerun()
     with last_col:
         if st.button(
-            "最后一页",
+            "末页",
             icon=":material/last_page:",
             disabled=page >= page_count,
             use_container_width=True,
