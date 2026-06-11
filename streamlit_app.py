@@ -28,6 +28,7 @@ RECORDED_AT_FIELD = "recordedAt"
 FOCUS_STATE_KEY = "focused_duplicate_item"
 PENDING_RESULT_PAGE_KEY = "pending_result_page"
 PENDING_RESULTS_SCROLL_KEY = "pending_results_scroll"
+RESULTS_SCROLL_SEQUENCE_KEY = "results_scroll_sequence"
 ACTIVE_DUPLICATE_COUNT_COLUMN = "activeDuplicateCount"
 RESULTS_TOP_ANCHOR_ID = "bmall-results-top"
 
@@ -53,12 +54,14 @@ export default function (component) {
   if (!targetId) return
 
   requestAnimationFrame(() => {
-    const target = document.getElementById(targetId)
-    if (target) {
-      target.scrollIntoView({ block: "start" })
-    } else {
-      window.scrollTo({ top: 0 })
-    }
+    setTimeout(() => {
+      const target = document.getElementById(targetId)
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" })
+      } else {
+        window.scrollTo({ top: 0, behavior: "smooth" })
+      }
+    }, 50)
   })
 }
 """,
@@ -493,9 +496,9 @@ def focus_label(row: pd.Series) -> str:
 def request_result_page(page: int, *, scroll_to_results: bool = False) -> None:
     st.session_state[PENDING_RESULT_PAGE_KEY] = max(1, int(page))
     if scroll_to_results:
-        st.session_state[PENDING_RESULTS_SCROLL_KEY] = (
-            int(st.session_state.get(PENDING_RESULTS_SCROLL_KEY, 0)) + 1
-        )
+        scroll_sequence = int(st.session_state.get(RESULTS_SCROLL_SEQUENCE_KEY, 0)) + 1
+        st.session_state[RESULTS_SCROLL_SEQUENCE_KEY] = scroll_sequence
+        st.session_state[PENDING_RESULTS_SCROLL_KEY] = scroll_sequence
 
 
 def apply_requested_result_page(page_count: int) -> None:
