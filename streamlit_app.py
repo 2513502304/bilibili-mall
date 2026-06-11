@@ -27,12 +27,41 @@ APP_TIMEZONE = timezone(timedelta(hours=8), "UTC+8")
 RECORDED_AT_FIELD = "recordedAt"
 FOCUS_STATE_KEY = "focused_duplicate_item"
 PENDING_RESULT_PAGE_KEY = "pending_result_page"
+PENDING_RESULTS_SCROLL_KEY = "pending_results_scroll"
 ACTIVE_DUPLICATE_COUNT_COLUMN = "activeDuplicateCount"
+RESULTS_TOP_ANCHOR_ID = "bmall-results-top"
 
 st.set_page_config(
     page_title="Bilibili mall finder",
     page_icon=":material/shopping_bag:",
     layout="wide",
+)
+
+_SCROLL_TO_ANCHOR = st.components.v2.component(
+    "scroll_to_anchor",
+    html='<span class="scroll-sentinel" aria-hidden="true"></span>',
+    css="""
+.scroll-sentinel {
+    display: block;
+    height: 0;
+    overflow: hidden;
+}
+""",
+    js="""
+export default function (component) {
+  const targetId = component.data && component.data.targetId
+  if (!targetId) return
+
+  requestAnimationFrame(() => {
+    const target = document.getElementById(targetId)
+    if (target) {
+      target.scrollIntoView({ block: "start" })
+    } else {
+      window.scrollTo({ top: 0 })
+    }
+  })
+}
+""",
 )
 
 
@@ -461,8 +490,12 @@ def focus_label(row: pd.Series) -> str:
     return str(row.get("c2cItemsName") or "这件商品")
 
 
-def request_result_page(page: int) -> None:
+def request_result_page(page: int, *, scroll_to_results: bool = False) -> None:
     st.session_state[PENDING_RESULT_PAGE_KEY] = max(1, int(page))
+    if scroll_to_results:
+        st.session_state[PENDING_RESULTS_SCROLL_KEY] = (
+            int(st.session_state.get(PENDING_RESULTS_SCROLL_KEY, 0)) + 1
+        )
 
 
 def apply_requested_result_page(page_count: int) -> None:
@@ -473,6 +506,22 @@ def apply_requested_result_page(page_count: int) -> None:
         st.session_state["result_page"] = 1
     elif st.session_state["result_page"] > page_count:
         st.session_state["result_page"] = page_count
+
+
+def render_results_top_anchor() -> None:
+    st.markdown(
+        f'<span id="{RESULTS_TOP_ANCHOR_ID}" aria-hidden="true"></span>',
+        unsafe_allow_html=True,
+    )
+    scroll_request = st.session_state.pop(PENDING_RESULTS_SCROLL_KEY, None)
+    if scroll_request is None:
+        return
+
+    _SCROLL_TO_ANCHOR(
+        data={"targetId": RESULTS_TOP_ANCHOR_ID, "request": int(scroll_request)},
+        key=f"scroll_to_results_{int(scroll_request)}",
+        height=0,
+    )
 
 
 def focus_duplicate_item(row: pd.Series, duplicate_key_mode: str) -> None:
@@ -591,7 +640,7 @@ def render_bottom_pagination(
             use_container_width=True,
             key="bottom_first_page",
         ):
-            request_result_page(1)
+            request_result_page(1, scroll_to_results=True)
             st.rerun()
     with previous_col:
         if st.button(
@@ -601,7 +650,7 @@ def render_bottom_pagination(
             use_container_width=True,
             key="bottom_previous_page",
         ):
-            request_result_page(page - 1)
+            request_result_page(page - 1, scroll_to_results=True)
             st.rerun()
     with next_col:
         if st.button(
@@ -612,7 +661,7 @@ def render_bottom_pagination(
             use_container_width=True,
             key="bottom_next_page",
         ):
-            request_result_page(page + 1)
+            request_result_page(page + 1, scroll_to_results=True)
             st.rerun()
     with last_col:
         if st.button(
@@ -622,7 +671,7 @@ def render_bottom_pagination(
             use_container_width=True,
             key="bottom_last_page",
         ):
-            request_result_page(page_count)
+            request_result_page(page_count, scroll_to_results=True)
             st.rerun()
 
 
@@ -1078,6 +1127,7 @@ if filtered.empty:
 else:
     page_count = max(1, math.ceil(len(filtered) / page_size))
     apply_requested_result_page(page_count)
+    render_results_top_anchor()
 
     page_col, caption_col = st.columns([1, 3], vertical_alignment="center")
     with page_col:
