@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=2.3.3",
     "orjson>=3.11.3",
     "pandas>=2.3.3",
+    "pre-commit>=4.6.0",
     "rich>=14.2.0",
-    "streamlit>=1.53.1",
+    "streamlit>=1.58.0",
 ]
