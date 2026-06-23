@@ -12,9 +12,8 @@ Create these repository secrets:
 - `BMALL_PROXY`: Optional explicit proxy for the crawler.
 - `HTTP_PROXY` / `HTTPS_PROXY`: Optional environment proxies.
 
-The workflow `.github/workflows/crawl-bmall-data.yml` runs every day at
-`00:00 UTC`, which is `08:00 UTC+8`, and can also be started manually from the
-Actions tab.
+The workflow `.github/workflows/crawl-bmall-data.yml` runs every Monday at
+`08:00 Asia/Shanghai`, and can also be started manually from the Actions tab.
 
 The workflow:
 
