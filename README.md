@@ -12,6 +12,11 @@ B 站会员购市集目前不支持按商品名称搜索，只能不断下滑刷
 - 会员购市集：[https://mall.bilibili.com/neul-next/index.html?page=magic-market_index](https://mall.bilibili.com/neul-next/index.html?page=magic-market_index)
 - 手办厂商信息：[https://www.hpoi.net/index/home](https://www.hpoi.net/index/home)
 
+## 同系列项目
+
+- [bilibili-collection](https://github.com/2513502304/bilibili-collection)：一个 Streamlit 交互式前端页面，用于下载每日更新的 Bilibili 收藏集。
+- [bilibili-emote](https://github.com/2513502304/bilibili-emote)：一个 Streamlit 交互式前端页面，用于下载每日更新的 Bilibili 表情包。
+
 ## 主要功能
 
 - 商品检索：按标题、明细商品名和卖家名搜索，支持多个关键词组合。
